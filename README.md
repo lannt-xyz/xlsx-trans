@@ -142,6 +142,18 @@ Mẹo: đóng các app nặng khi chạy; app giữ model trong RAM 30 phút gi�
 
 Đã kiểm tra với bản dịch giả lập trên file mẫu (cell, shape, biểu đồ, comment, table, nhiều sheet) và mở được bằng LibreOffice. Phần cấu hình đã kiểm tra: nạp `config.toml` / `config.local.toml` / file chỉ định bằng `-c`, prompt và options được gửi đúng cho Ollama (kiểm tra trên payload, không gọi model thật), bật/tắt `[targets]`, đổi `suffix`, cache vô hiệu khi đổi prompt, báo lỗi khi cấu hình sai. **Chưa kiểm tra trên Excel thật và với model Ollama thật** — hãy thử trên một bản sao trước khi dùng cho file quan trọng.
 
+## Chạy test
+
+Bộ unittest dùng thư viện chuẩn của Python, chạy từ thư mục gốc của repo:
+
+```bash
+python -m unittest discover -v
+```
+
+- **Không cần Ollama hay mạng**: lời gọi tới Ollama được giả lập; file xlsx mẫu được dựng ngay trong test (`tests/fixtures.py`) với shared strings có furigana, inline string, công thức, comment, table, shape trong `mc:AlternateContent`, biểu đồ và SmartArt.
+- Cần `lxml` và `openpyxl` (đã có trong `requirements.txt`); các test Markdown tự bỏ qua nếu thiếu `openpyxl`.
+- Phạm vi: nạp và kiểm tra cấu hình/prompt (`test_config.py`), payload và retry gửi Ollama (`test_ollama.py`), gom/áp bản dịch trên XML (`test_collectors.py`), toàn bộ luồng dịch gồm giữ nguyên các part không đổi, bật/tắt `[targets]`, cache, dừng/tiếp tục, lỗi (`test_process.py`), xuất Markdown (`test_markdown.py`), tham số dòng lệnh (`test_cli.py`).
+
 ## Giấy phép
 
 Apache License 2.0, xem file [LICENSE](LICENSE).

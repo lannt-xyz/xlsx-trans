@@ -136,7 +136,7 @@ def _deep_merge(base, extra):
             base[k] = v
 
 
-def _read_text_setting(rel, base_dir, default, warnings, label):
+def _read_text_setting(rel, base_dir, default, warnings, label, warn=True):
     if not rel:
         return default
     p = Path(str(rel)).expanduser()
@@ -145,7 +145,8 @@ def _read_text_setting(rel, base_dir, default, warnings, label):
     try:
         text = p.read_text(encoding="utf-8").strip()
     except OSError:
-        warnings.append(f"Không đọc được {label} ({p}) — dùng prompt mặc định trong app.py.")
+        if warn:  # đường dẫn mặc định (không do config khai báo) thiếu file thì lặng lẽ dùng prompt trong code
+            warnings.append(f"Không đọc được {label} ({p}) — dùng prompt mặc định trong app.py.")
         return default
     return text or default
 
@@ -153,6 +154,7 @@ def _read_text_setting(rel, base_dir, default, warnings, label):
 def load_config(path=None):
     """Nạp config. path=None: config.toml rồi config.local.toml cạnh app.py (nếu có)."""
     data = copy.deepcopy(DEFAULT_CONFIG)
+    user_data = {}  # chỉ những gì file cấu hình tự khai báo (để biết đường dẫn nào là do người dùng đặt)
     if path:
         p = Path(path).expanduser()
         if not p.is_file():
@@ -163,7 +165,9 @@ def load_config(path=None):
     for f in files:
         try:
             with open(f, "rb") as fh:
-                _deep_merge(data, tomllib.load(fh))
+                loaded = tomllib.load(fh)
+            _deep_merge(data, copy.deepcopy(loaded))
+            _deep_merge(user_data, loaded)
         except Exception as e:  # noqa: BLE001
             raise ValueError(f"Không đọc được {f}: {e}") from e
     base_dir = files[-1].parent if files else APP_DIR
@@ -181,11 +185,14 @@ def load_config(path=None):
     c.options = dict(o.get("options") or {})
 
     pr = data["prompt"]
+    set_by_user = user_data.get("prompt", {})
     c.system_prompt = _read_text_setting(
-        pr.get("system_file"), base_dir, DEFAULT_SYSTEM_PROMPT, c.warnings, "prompt.system_file"
+        pr.get("system_file"), base_dir, DEFAULT_SYSTEM_PROMPT, c.warnings, "prompt.system_file",
+        warn="system_file" in set_by_user,
     )
     c.user_template = _read_text_setting(
-        pr.get("user_file"), base_dir, DEFAULT_USER_TEMPLATE, c.warnings, "prompt.user_file"
+        pr.get("user_file"), base_dir, DEFAULT_USER_TEMPLATE, c.warnings, "prompt.user_file",
+        warn="user_file" in set_by_user,
     )
 
     t = data["translate"]
@@ -553,12 +560,13 @@ def process_xlsx(
         infos = zin.infolist()
         for info in infos:
             n = info.filename
+            root = None
+            before = len(units)
             if RE_SHARED.match(n):
                 if not tg["cells"]:
                     continue
                 root = _parse(zin.read(n))
                 _collect_sml(root.xpath("//m:si", namespaces=NSMAP), units, rx, cfg.cell_sep)
-                parsed[n] = root
             elif RE_COMMENTS.match(n):
                 if not tg["comments"]:
                     continue
@@ -566,7 +574,6 @@ def process_xlsx(
                 _collect_sml(
                     root.xpath("//m:comment/m:text", namespaces=NSMAP), units, rx, cfg.cell_sep
                 )
-                parsed[n] = root
             elif RE_SHEET.match(n):
                 if not tg["cells"]:
                     continue
@@ -578,7 +585,6 @@ def process_xlsx(
                     root.xpath("//m:c[@t='inlineStr']/m:is", namespaces=NSMAP),
                     units, rx, cfg.cell_sep,
                 )
-                parsed[n] = root
             elif RE_DRAWML.match(n):
                 kind = (
                     "shapes" if n.startswith("xl/drawings/")
@@ -589,13 +595,13 @@ def process_xlsx(
                     continue
                 root = _parse(zin.read(n))
                 _collect_drawingml(root, units, rx, cfg.shape_sep)
-                parsed[n] = root
             elif RE_TABLE.match(n):
                 if not tg["table_headers"]:
                     continue
                 root = _parse(zin.read(n))
                 _collect_table(root, tables_post, units, rx, cfg.cell_sep)
-                parsed[n] = root
+            if root is not None and len(units) > before:
+                parsed[n] = root  # chỉ ghi lại part có đoạn cần dịch
 
         unique = list(dict.fromkeys(u[0] for u in units))
         log(f"Tìm thấy {len(units)} đoạn chữ cần dịch ({len(unique)} chuỗi khác nhau).")
