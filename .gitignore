@@ -224,3 +224,6 @@ __marimo__/
 *_en.xlsx
 *_en.xlsm
 *_en.md
+
+# cấu hình riêng cho từng máy (ghi đè config.toml)
+config.local.toml

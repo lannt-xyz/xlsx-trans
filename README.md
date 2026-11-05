@@ -17,6 +17,7 @@ Khác với cách đọc bằng `openpyxl` rồi ghi lại (hay làm mất shape
 - Xuất thêm **một file Markdown chung** để đọc/đối chiếu (có thể tắt).
 - Cache bản dịch ra đĩa: bấm Dừng hoặc chạy lại thì không phải dịch lại phần đã xong.
 - Có giao diện (tkinter) và chạy dòng lệnh.
+- **Cấu hình và prompt nằm ngoài code**: `config.toml` (model, tham số Ollama, phần nào được dịch, tên file output...) và `prompts/` (system prompt, user prompt) — sửa file là đổi hành vi, không phải sửa code. Xem mục [Cấu hình](#cấu-hình).
 
 ## Cài đặt
 
@@ -32,7 +33,7 @@ Khác với cách đọc bằng `openpyxl` rồi ghi lại (hay làm mất shape
    pip install -r requirements.txt
    ```
 
-   (`lxml` để sửa XML, `openpyxl` chỉ dùng để đọc dữ liệu khi xuất Markdown. Trên Linux có thể cần thêm `python3-tk` cho giao diện.)
+   (`lxml` để sửa XML, `openpyxl` chỉ dùng để đọc dữ liệu khi xuất Markdown, `tomli` chỉ cần với Python < 3.11 để đọc `config.toml`. Trên Linux có thể cần thêm `python3-tk` cho giao diện.)
 
 3. Đảm bảo Ollama đang chạy (`ollama serve`, hoặc app Ollama đang mở). Mặc định app kết nối tới `http://localhost:11434`.
 
@@ -51,18 +52,51 @@ Chọn file `.xlsx`/`.xlsm` → bấm **Tải model** để lấy danh sách mod
 ```bash
 python app.py input.xlsx
 python app.py input.xlsx -o output.xlsx -m qwen2.5:3b --mode bilingual --no-md
+python app.py input.xlsx -c my-config.toml
 ```
 
-| Tham số | Ý nghĩa | Mặc định |
+Tham số dòng lệnh **ghi đè** giá trị trong file cấu hình. Không truyền tham số nào thì giá trị lấy từ `config.toml`.
+
+| Tham số | Ý nghĩa | Lấy từ config nếu bỏ trống |
 |---|---|---|
-| `input` | File `.xlsx` hoặc `.xlsm` cần dịch | bắt buộc |
-| `-o`, `--output` | File kết quả | `<tên>_en.xlsx` cạnh file gốc |
-| `-m`, `--model` | Tên model Ollama | `qwen2.5:7b` |
-| `--host` | Địa chỉ Ollama | `http://localhost:11434` |
-| `--mode` | `replace` (thay bằng bản dịch) hoặc `bilingual` (JP + EN) | `replace` |
-| `--no-md` | Không xuất file Markdown | xuất |
+| `input` | File `.xlsx` hoặc `.xlsm` cần dịch (bỏ trống: mở giao diện) | — |
+| `-c`, `--config` | File cấu hình `.toml` | `config.toml` cạnh `app.py` |
+| `-o`, `--output` | File kết quả | `<tên><output.suffix>.xlsx` cạnh file gốc |
+| `-m`, `--model` | Tên model Ollama | `ollama.model` |
+| `--host` | Địa chỉ Ollama | `ollama.host` |
+| `--mode` | `replace` (thay bằng bản dịch) hoặc `bilingual` (JP + EN) | `translate.mode` |
+| `--no-md` | Không xuất file Markdown | `output.markdown` |
 
 File gốc **không bị sửa**. File output luôn phải khác file input.
+
+## Cấu hình
+
+Mọi giá trị trước đây nằm cứng trong code giờ nằm trong `config.toml` (có chú thích từng mục):
+
+| Mục | Điều chỉnh được |
+|---|---|
+| `[ollama]` | `host`, `model`, `keep_alive`, `timeout`, `retries` |
+| `[ollama.options]` | Tham số sinh văn bản truyền thẳng cho Ollama: `temperature`, `num_ctx`, `num_predict`, `top_p`... (thêm tùy ý) |
+| `[prompt]` | Đường dẫn file system prompt và user prompt |
+| `[translate]` | `source_pattern` (regex chọn đoạn cần dịch), `mode`, ký tự nối khi song ngữ |
+| `[targets]` | Bật/tắt từng phần được dịch: `cells`, `shapes`, `charts`, `diagrams`, `comments`, `table_headers` |
+| `[output]` | `suffix` tên file kết quả, xuất Markdown, giới hạn dòng/cột Markdown, bật/tắt cache |
+
+Cách nạp cấu hình:
+
+1. `config.toml` cạnh `app.py` được nạp tự động; chỉ định file khác bằng `-c`.
+2. Nếu có `config.local.toml` cạnh nó, các giá trị trong đó **ghi đè** `config.toml`. File này đã nằm trong `.gitignore`, hợp để đặt model hoặc đường dẫn riêng cho từng máy.
+3. Mục nào không khai báo thì dùng giá trị mặc định trong `app.py`; `[ollama.options]` được **gộp** với mặc định (chỉ cần ghi tham số muốn đổi).
+4. Tham số dòng lệnh và giá trị chọn trên giao diện ghi đè tất cả.
+
+Cấu hình sai (regex lỗi, `mode` không hợp lệ, TOML sai cú pháp) sẽ báo lỗi rõ ràng khi khởi động. Nếu file prompt bị thiếu, app dùng prompt mặc định trong code và in cảnh báo.
+
+### Tùy chỉnh prompt
+
+- `prompts/system.txt`: system prompt. Sửa để đổi văn phong, thêm quy tắc, thêm bảng thuật ngữ cố định (ví dụ "Translate 売上 as 'Revenue'")...
+- `prompts/user.txt`: mẫu user prompt, `{text}` được thay bằng đoạn cần dịch. Mặc định chỉ có `{text}`; có thể thêm hướng dẫn quanh nó, ví dụ `Translate to English:\n{text}`. Nếu file không chứa `{text}`, nội dung file được đặt trước đoạn cần dịch.
+- **Đổi ngôn ngữ**: sửa `translate.source_pattern` (regex nhận diện ngôn ngữ nguồn) và `prompts/system.txt` (hướng dịch). Phần còn lại của app không phụ thuộc ngôn ngữ cụ thể (nhãn trên giao diện và trong file Markdown vẫn bằng tiếng Việt).
+- Chỉ cần sửa file `.txt`, không cần sửa code. Có thể trỏ `[prompt]` sang file prompt khác, kể cả đường dẫn tuyệt đối.
 
 ## Kết quả
 
@@ -70,7 +104,7 @@ Với `report.xlsx`, app tạo:
 
 - `report_en.xlsx`: bản đã dịch.
 - `report_en.md`: bản Markdown (nếu không tắt).
-- `report_en.xlsx.cache.json`: cache bản dịch, dùng lại khi chạy lại cùng model. Đổi model thì dịch lại từ đầu. Xóa file này nếu muốn dịch lại hoàn toàn.
+- `report_en.xlsx.cache.json`: cache bản dịch, dùng lại khi chạy lại. Cache **tự vô hiệu khi đổi model, prompt hoặc `ollama.options`**, nên sửa prompt xong chạy lại sẽ dịch lại từ đầu. Xóa file này nếu muốn dịch lại hoàn toàn, hoặc tắt bằng `output.cache = false`.
 
 ### File Markdown
 
@@ -106,7 +140,7 @@ Mẹo: đóng các app nặng khi chạy; app giữ model trong RAM 30 phút gi�
 
 ## Trạng thái kiểm thử
 
-Đã kiểm tra với bản dịch giả lập trên file mẫu (cell, shape, biểu đồ, comment, table, nhiều sheet) và mở được bằng LibreOffice. **Chưa kiểm tra trên Excel thật và với model Ollama thật** — hãy thử trên một bản sao trước khi dùng cho file quan trọng.
+Đã kiểm tra với bản dịch giả lập trên file mẫu (cell, shape, biểu đồ, comment, table, nhiều sheet) và mở được bằng LibreOffice. Phần cấu hình đã kiểm tra: nạp `config.toml` / `config.local.toml` / file chỉ định bằng `-c`, prompt và options được gửi đúng cho Ollama (kiểm tra trên payload, không gọi model thật), bật/tắt `[targets]`, đổi `suffix`, cache vô hiệu khi đổi prompt, báo lỗi khi cấu hình sai. **Chưa kiểm tra trên Excel thật và với model Ollama thật** — hãy thử trên một bản sao trước khi dùng cho file quan trọng.
 
 ## Giấy phép
 

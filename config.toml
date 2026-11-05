@@ -1,0 +1,63 @@
+# Cấu hình xlsx-trans.
+#
+# - File này được nạp tự động nếu nằm cạnh app.py (hoặc chỉ định bằng: python app.py -c đường_dẫn.toml).
+# - Có thể tạo thêm `config.local.toml` cạnh nó để ghi đè riêng cho máy bạn
+#   (đã nằm trong .gitignore, không bị commit).
+# - Mục nào bỏ trống/không khai báo thì dùng giá trị mặc định trong app.py.
+# - Tham số dòng lệnh (-m, --host, --mode, --no-md) luôn ưu tiên hơn file này.
+
+[ollama]
+host = "http://localhost:11434"
+model = "qwen2.5:7b"
+# Giữ model trong RAM bao lâu sau lần gọi cuối ("30m", "1h", "-1" = mãi mãi). Bỏ trống = mặc định của Ollama.
+keep_alive = "30m"
+# Thời gian chờ tối đa cho mỗi request (giây). Máy yếu / model lớn thì tăng lên.
+timeout = 600
+# Số lần thử lại khi request lỗi hoặc trả về rỗng.
+retries = 2
+
+# Tham số sinh văn bản, truyền thẳng vào "options" của Ollama.
+# Thêm tùy ý: top_p, top_k, num_predict, repeat_penalty, num_thread...
+[ollama.options]
+temperature = 0
+num_ctx = 4096
+
+[prompt]
+# Đường dẫn tương đối so với thư mục chứa file config này.
+# System prompt: sửa file này để đổi cách dịch (văn phong, thuật ngữ, quy tắc giữ nguyên...).
+system_file = "prompts/system.txt"
+# User prompt: {text} sẽ được thay bằng đoạn cần dịch. Nếu file không chứa {text},
+# nội dung file được đặt trước đoạn cần dịch.
+user_file = "prompts/user.txt"
+
+[translate]
+# Regex xác định đoạn nào cần dịch (mặc định: có hiragana / katakana / kanji).
+# Dùng dấu nháy đơn để TOML không xử lý ký tự \u. Đổi ngôn ngữ nguồn thì sửa regex này
+# cùng với prompts/system.txt.
+source_pattern = '[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]'
+# "replace": thay bằng bản dịch | "bilingual": giữ cả bản gốc và bản dịch
+mode = "replace"
+# Ký tự nối bản gốc và bản dịch khi mode = "bilingual"
+bilingual_cell_sep = "\n"     # trong cell, comment, tên cột Table
+bilingual_shape_sep = " / "   # trong shape, text box, biểu đồ
+
+# Phần nào của file được dịch. Đặt false để bỏ qua.
+# Lưu ý: nếu tắt "cells" nhưng bật "table_headers" (hoặc ngược lại), tên cột của Table
+# sẽ không khớp với ô header; nên để hai mục này giống nhau.
+[targets]
+cells = true           # chữ trong cell
+shapes = true          # shape, text box, WordArt (xl/drawings)
+charts = true          # tiêu đề, nhãn biểu đồ (xl/charts)
+diagrams = true        # SmartArt (xl/diagrams)
+comments = true        # comment / note kiểu cũ
+table_headers = true   # tên cột của Table
+
+[output]
+# File kết quả = <tên gốc><suffix>.xlsx, ví dụ report_en.xlsx
+suffix = "_en"
+# Xuất thêm file Markdown (<tên gốc><suffix>.md)
+markdown = true
+markdown_max_rows = 20000   # cắt mỗi sheet ở dòng này
+markdown_max_cols = 200     # chỉ đọc tối đa số cột này
+# Lưu cache bản dịch (<file output>.cache.json). Cache tự vô hiệu khi đổi model, prompt hoặc options.
+cache = true
