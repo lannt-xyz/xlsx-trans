@@ -1,0 +1,55 @@
+# Chạy bằng terminal:
+#   mkdir -p work models                       # đặt folder Excel cần dịch vào ./work, ví dụ ./work/data
+#   docker compose build
+#
+# (A) Model .gguf nhúng sẵn — container KHÔNG có mạng:
+#   docker compose run --rm gguf /work/data --model-path /models/ten-model.gguf
+# (B) Ollama chạy trong compose (lần đầu phải tải model):
+#   docker compose --profile ollama up -d ollama
+#   docker compose exec ollama ollama pull qwen2.5:7b
+#   docker compose run --rm ollama-cli /work/data -m qwen2.5:7b
+#   docker compose --profile ollama down
+#
+# Kết quả nằm cạnh folder đầu vào: ./work/data_en và ./work/data_en_md
+# Thêm --dry-run để xem kế hoạch trước. Đổi tham số tương tự `python app.py` (xem --help).
+
+x-common: &common
+  image: xlsx-trans
+  build:
+    context: .
+    args:
+      WITH_LLAMA: "1"
+  # chạy bằng user của bạn để file kết quả không bị sở hữu bởi root (export UID GID nếu shell chưa có)
+  user: "${UID:-1000}:${GID:-1000}"
+  environment:
+    HOME: /tmp
+  volumes:
+    - ./work:/work
+    - ./models:/models:ro
+    - ./prompts:/app/prompts:ro
+    - ./config.docker.toml:/app/config.docker.toml:ro
+
+services:
+  # Model .gguf chạy trong container, không mạng (dữ liệu không thể ra ngoài)
+  gguf:
+    <<: *common
+    entrypoint: ["python", "/app/app.py", "-c", "/app/config.docker.toml", "--backend", "llama_cpp"]
+    network_mode: none
+
+  # Dùng Ollama trong compose
+  ollama-cli:
+    <<: *common
+    entrypoint: ["python", "/app/app.py", "-c", "/app/config.docker.toml", "--backend", "ollama"]
+    profiles: ["ollama"]
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    volumes:
+      - ollama:/root/.ollama
+    # Không publish cổng ra máy host: chỉ container cùng compose gọi được.
+
+volumes:
+  ollama:

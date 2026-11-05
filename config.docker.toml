@@ -1,0 +1,16 @@
+# Cấu hình dùng trong Docker (docker-compose.yml nạp file này bằng -c).
+# Chỉ cần ghi những mục khác mặc định; phần còn lại lấy từ giá trị mặc định trong code.
+# Prompt: sửa prompts/system.txt ở máy bạn, compose đã mount thư mục đó vào container.
+
+[ollama]
+# Tên service Ollama trong docker-compose.yml. Dùng Ollama đã chạy trên máy host: http://host.docker.internal:11434
+host = "http://ollama:11434"
+
+[llama_cpp]
+# File .gguf nằm trong ./models trên máy, được mount vào /models
+model_path = "/models/model.gguf"
+# n_threads = 6
+
+[prompt]
+system_file = "/app/prompts/system.txt"
+user_file = "/app/prompts/user.txt"

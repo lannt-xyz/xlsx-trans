@@ -115,6 +115,31 @@ python app.py data --model-path models/qwen2.5-7b-instruct-q4_k_m.gguf
 - Thiếu file `.gguf` hoặc thiếu thư viện thì app báo lỗi ngay từ đầu, không báo từng đoạn.
 - Cache bản dịch tách riêng theo backend và tên file model.
 
+### Chạy bằng Docker (terminal)
+
+Container chỉ có giao diện dòng lệnh (không có GUI). Dữ liệu để trong `./work`, model `.gguf` trong `./models`:
+
+```bash
+mkdir -p work models          # copy folder Excel vào ./work/data, file .gguf vào ./models
+export UID GID                # để file kết quả không thuộc root (bash); có thể bỏ qua nếu UID đã là 1000
+docker compose build          # có llama-cpp-python; bản nhẹ: docker compose build --build-arg WITH_LLAMA=0
+
+# (A) Model .gguf nhúng sẵn. Container chạy với network_mode: none (không có mạng)
+docker compose run --rm gguf /work/data --model-path /models/ten-model.gguf
+
+# (B) Ollama chạy trong compose
+docker compose --profile ollama up -d ollama
+docker compose exec ollama ollama pull qwen2.5:7b      # lần đầu cần mạng để tải model
+docker compose run --rm ollama-cli /work/data -m qwen2.5:7b
+docker compose --profile ollama down
+```
+
+- Kết quả nằm cạnh folder đầu vào: `./work/data_en`, `./work/data_en_md`. Mọi tham số của `python app.py` dùng được (`--dry-run`, `--mode bilingual`, `--no-md`...).
+- Cấu hình dùng trong container là `config.docker.toml` (host Ollama `http://ollama:11434`, `model_path = /models/model.gguf`). `./prompts` được mount vào, nên sửa prompt trên máy là có hiệu lực ngay, không cần build lại.
+- Dùng Ollama đã cài sẵn trên máy host thay vì trong compose: thêm `--host http://host.docker.internal:11434` (Linux cần `extra_hosts: ["host.docker.internal:host-gateway"]`).
+- Cổng Ollama không được publish ra ngoài. Chỉ bước `ollama pull` cần mạng; nếu cần tuyệt đối không có mạng, dùng cách (A).
+- Chưa build thử trên Docker thật trong môi trường của tôi (không có Docker daemon); `docker compose config` hợp lệ và phần cấu hình trong container đã chạy thử ngoài Docker. Nếu build `llama-cpp-python` lỗi, dùng `--build-arg WITH_LLAMA=0` với Ollama.
+
 ## Cấu hình
 
 Mọi giá trị trước đây nằm cứng trong code giờ nằm trong `config.toml` (có chú thích từng mục):
@@ -195,6 +220,7 @@ Mẹo: đóng các app nặng khi chạy; app giữ model trong RAM 30 phút gi�
 
 ```
 app.py                 điểm vào (gọi xlsx_trans.cli)
+Dockerfile, docker-compose.yml, config.docker.toml   chạy trong container
 xlsx_trans/
   config.py            nạp config.toml/prompt, giá trị mặc định
   backend.py           chọn backend model (ollama | llama_cpp)

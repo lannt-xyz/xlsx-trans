@@ -1,0 +1,10 @@
+.git
+tests
+work
+models
+*.gguf
+*.cache.json
+config.local.toml
+__pycache__
+*.pyc
+.venv
