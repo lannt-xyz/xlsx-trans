@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# xlsx-trans: cache bản dịch và file kết quả
+*.cache.json
+*_en.xlsx
+*_en.xlsm
+*_en.md
