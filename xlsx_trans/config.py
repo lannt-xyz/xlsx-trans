@@ -1,0 +1,183 @@
+"""Nạp cấu hình (config.toml + config.local.toml) và prompt. Giá trị mặc định nằm ở đây.
+
+Ý nghĩa từng mục: xem config.toml.
+"""
+import copy
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+try:
+    import tomllib
+except ImportError:  # Python < 3.11
+    try:
+        import tomli as tomllib
+    except ImportError:  # pragma: no cover
+        sys.exit("Python < 3.11 cần thư viện tomli. Cài bằng:  pip install tomli")
+
+# Thư mục gốc của repo (chứa config.toml, prompts/, app.py)
+APP_DIR = Path(__file__).resolve().parent.parent
+
+# Hiragana, Katakana, Kanji, half-width Katakana
+JP_PATTERN = r"[぀-ヿ㐀-䶿一-鿿ｦ-ﾟ]"
+
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a professional Japanese-to-English translator working on spreadsheet text. "
+    "Translate the user's text into natural, concise English. "
+    "Rules: output ONLY the translation, no explanations, no quotes, no notes. "
+    "Keep numbers, codes, product IDs, URLs, English words and symbols unchanged. "
+    "Keep line breaks as they are. If part of the text is already English, keep it."
+)
+DEFAULT_USER_TEMPLATE = "{text}"
+
+DEFAULT_CONFIG = {
+    "ollama": {
+        "host": "http://localhost:11434",
+        "model": "qwen2.5:7b",
+        "keep_alive": "30m",
+        "timeout": 600,
+        "retries": 2,
+        "options": {"temperature": 0, "num_ctx": 4096},
+    },
+    "prompt": {
+        "system_file": "prompts/system.txt",
+        "user_file": "prompts/user.txt",
+    },
+    "translate": {
+        "source_pattern": JP_PATTERN,
+        "mode": "replace",
+        "bilingual_cell_sep": "\n",
+        "bilingual_shape_sep": " / ",
+    },
+    "targets": {
+        "cells": True,
+        "shapes": True,
+        "charts": True,
+        "diagrams": True,
+        "comments": True,
+        "table_headers": True,
+    },
+    "output": {
+        "suffix": "_en",
+        "markdown": True,
+        "markdown_suffix": "_md",
+        "markdown_max_rows": 20000,
+        "markdown_max_cols": 200,
+        "cache": True,
+    },
+    "batch": {
+        "recursive": True,
+        "continue_on_error": True,
+    },
+}
+
+
+class Config:
+    """Cấu hình đã nạp. Có thể copy.copy() rồi đổi thuộc tính (GUI / tham số dòng lệnh làm vậy)."""
+
+    def signature(self):
+        """Dấu vân tay của những thứ ảnh hưởng tới bản dịch; đổi thì cache cũ không dùng lại."""
+        blob = json.dumps(
+            [self.model, self.system_prompt, self.user_template, self.options],
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+
+
+def deep_merge(base, extra):
+    for k, v in extra.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            deep_merge(base[k], v)
+        else:
+            base[k] = v
+
+
+def read_text_setting(rel, base_dir, default, warnings, label, warn=True):
+    if not rel:
+        return default
+    p = Path(str(rel)).expanduser()
+    if not p.is_absolute():
+        p = base_dir / p
+    try:
+        text = p.read_text(encoding="utf-8").strip()
+    except OSError:
+        if warn:  # đường dẫn mặc định (không do config khai báo) thiếu file thì lặng lẽ dùng prompt trong code
+            warnings.append(f"Không đọc được {label} ({p}) — dùng prompt mặc định trong code.")
+        return default
+    return text or default
+
+
+def load_config(path=None):
+    """Nạp config. path=None: config.toml rồi config.local.toml trong thư mục gốc (nếu có)."""
+    data = copy.deepcopy(DEFAULT_CONFIG)
+    user_data = {}  # chỉ những gì file cấu hình tự khai báo (để biết đường dẫn nào là do người dùng đặt)
+    if path:
+        p = Path(path).expanduser()
+        if not p.is_file():
+            raise FileNotFoundError(f"Không thấy file cấu hình: {p}")
+        files = [p]
+    else:
+        files = [f for f in (APP_DIR / "config.toml", APP_DIR / "config.local.toml") if f.is_file()]
+    for f in files:
+        try:
+            with open(f, "rb") as fh:
+                loaded = tomllib.load(fh)
+            deep_merge(data, copy.deepcopy(loaded))
+            deep_merge(user_data, loaded)
+        except Exception as e:  # noqa: BLE001
+            raise ValueError(f"Không đọc được {f}: {e}") from e
+    base_dir = files[-1].parent if files else APP_DIR
+
+    c = Config()
+    c.source_files = [str(f) for f in files]
+    c.warnings = []
+
+    o = data["ollama"]
+    c.host = str(o["host"]).rstrip("/")
+    c.model = str(o["model"])
+    c.keep_alive = str(o.get("keep_alive", "") or "")
+    c.timeout = float(o["timeout"])
+    c.retries = int(o["retries"])
+    c.options = dict(o.get("options") or {})
+
+    pr = data["prompt"]
+    set_by_user = user_data.get("prompt", {})
+    c.system_prompt = read_text_setting(
+        pr.get("system_file"), base_dir, DEFAULT_SYSTEM_PROMPT, c.warnings, "prompt.system_file",
+        warn="system_file" in set_by_user,
+    )
+    c.user_template = read_text_setting(
+        pr.get("user_file"), base_dir, DEFAULT_USER_TEMPLATE, c.warnings, "prompt.user_file",
+        warn="user_file" in set_by_user,
+    )
+
+    t = data["translate"]
+    try:
+        c.src_re = re.compile(t["source_pattern"])
+    except re.error as e:
+        raise ValueError(f"translate.source_pattern không hợp lệ: {e}") from e
+    c.mode = t["mode"]
+    if c.mode not in ("replace", "bilingual"):
+        raise ValueError('translate.mode phải là "replace" hoặc "bilingual".')
+    c.cell_sep = str(t["bilingual_cell_sep"])
+    c.shape_sep = str(t["bilingual_shape_sep"])
+
+    c.targets = {k: bool(v) for k, v in data["targets"].items()}
+    for k in DEFAULT_CONFIG["targets"]:
+        c.targets.setdefault(k, True)
+
+    out = data["output"]
+    c.suffix = str(out["suffix"])
+    c.md = bool(out["markdown"])
+    c.md_suffix = str(out["markdown_suffix"])
+    c.md_max_rows = int(out["markdown_max_rows"])
+    c.md_max_cols = int(out["markdown_max_cols"])
+    c.cache = bool(out["cache"])
+
+    b = data["batch"]
+    c.recursive = bool(b["recursive"])
+    c.continue_on_error = bool(b["continue_on_error"])
+    return c

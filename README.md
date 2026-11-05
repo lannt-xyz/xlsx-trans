@@ -45,7 +45,7 @@ Khác với cách đọc bằng `openpyxl` rồi ghi lại (hay làm mất shape
 python app.py
 ```
 
-Chọn file `.xlsx`/`.xlsm` → bấm **Tải model** để lấy danh sách model từ Ollama → chọn kiểu ghi → **Bắt đầu dịch**. Có thanh tiến độ và nút **Dừng** (phần đã dịch vẫn được lưu).
+Chọn một file (nút **File…**) hoặc cả folder (nút **Folder…**) → bấm **Tải model** để lấy danh sách model từ Ollama → chọn kiểu ghi → **Bắt đầu dịch**. Có thanh tiến độ và nút **Dừng** (phần đã dịch vẫn được lưu).
 
 ### Dòng lệnh
 
@@ -55,13 +55,40 @@ python app.py input.xlsx -o output.xlsx -m qwen2.5:3b --mode bilingual --no-md
 python app.py input.xlsx -c my-config.toml
 ```
 
+### Dịch cả folder
+
+```bash
+python app.py ./data               # tạo ./data_en và ./data_en_md cạnh folder gốc
+python app.py ./data --dry-run     # chỉ in kế hoạch, không dịch
+python app.py ./data -o D:\out --md-out D:\out_md --no-recursive
+```
+
+Với folder `data`, app tạo cạnh nó:
+
+```
+data/                      data_en/                    data_en_md/
+  a.xlsx                     a.xlsx                      a.md
+  sub/                       sub/                        sub/
+    b.xlsx                     b.xlsx                      b.md
+    deep/c.xlsm                deep/c.xlsm                 deep/c.md
+```
+
+- Cấu trúc thư mục con và tên file được giữ nguyên; folder gốc không bị sửa. Hậu tố lấy từ `output.suffix` (`_en`) và `output.markdown_suffix` (`_md`).
+- Nếu cùng thư mục có `x.xlsx` và `x.xlsm`, file Markdown thành `x.xlsx.md` và `x.xlsm.md` để không ghi đè nhau.
+- Chỉ xử lý `.xlsx`/`.xlsm`. `.xls`/`.xlsb` được báo là bỏ qua (hãy Save As `.xlsx`); file ẩn, file khóa `~$...` và file khác không bị đụng tới (không copy sang folder output).
+- Cache bản dịch dùng chung cho cả folder, lưu ở `data_en.cache.json`: chuỗi lặp lại giữa các file chỉ dịch một lần, và chạy lại sau khi dừng/lỗi sẽ tiếp tục từ chỗ đã dịch.
+- Một file lỗi (hỏng, đang bị khóa…) được ghi lại rồi dịch tiếp các file còn lại; đặt `batch.continue_on_error = false` để dừng ngay. Mã thoát là 1 nếu có file lỗi.
+
 Tham số dòng lệnh **ghi đè** giá trị trong file cấu hình. Không truyền tham số nào thì giá trị lấy từ `config.toml`.
 
 | Tham số | Ý nghĩa | Lấy từ config nếu bỏ trống |
 |---|---|---|
-| `input` | File `.xlsx` hoặc `.xlsm` cần dịch (bỏ trống: mở giao diện) | — |
+| `input` | File `.xlsx`/`.xlsm` hoặc **folder** cần dịch (bỏ trống: mở giao diện) | — |
 | `-c`, `--config` | File cấu hình `.toml` | `config.toml` cạnh `app.py` |
-| `-o`, `--output` | File kết quả | `<tên><output.suffix>.xlsx` cạnh file gốc |
+| `-o`, `--output` | File kết quả (hoặc folder kết quả nếu input là folder) | `<tên><output.suffix>.xlsx` / `<folder><output.suffix>` |
+| `--md-out` | File (hoặc folder) Markdown | cạnh file kết quả / `<folder><suffix><markdown_suffix>` |
+| `--no-recursive` | Folder: chỉ xử lý file ở cấp trên cùng | `batch.recursive` |
+| `--dry-run` | Chỉ in kế hoạch, không dịch/ghi gì | — |
 | `-m`, `--model` | Tên model Ollama | `ollama.model` |
 | `--host` | Địa chỉ Ollama | `ollama.host` |
 | `--mode` | `replace` (thay bằng bản dịch) hoặc `bilingual` (JP + EN) | `translate.mode` |
@@ -80,13 +107,14 @@ Mọi giá trị trước đây nằm cứng trong code giờ nằm trong `confi
 | `[prompt]` | Đường dẫn file system prompt và user prompt |
 | `[translate]` | `source_pattern` (regex chọn đoạn cần dịch), `mode`, ký tự nối khi song ngữ |
 | `[targets]` | Bật/tắt từng phần được dịch: `cells`, `shapes`, `charts`, `diagrams`, `comments`, `table_headers` |
-| `[output]` | `suffix` tên file kết quả, xuất Markdown, giới hạn dòng/cột Markdown, bật/tắt cache |
+| `[batch]` | `recursive` (vào thư mục con), `continue_on_error` (file lỗi thì dịch tiếp file khác) |
+| `[output]` | `suffix`, `markdown_suffix` (đuôi tên file/folder kết quả), xuất Markdown, giới hạn dòng/cột Markdown, bật/tắt cache |
 
 Cách nạp cấu hình:
 
 1. `config.toml` cạnh `app.py` được nạp tự động; chỉ định file khác bằng `-c`.
 2. Nếu có `config.local.toml` cạnh nó, các giá trị trong đó **ghi đè** `config.toml`. File này đã nằm trong `.gitignore`, hợp để đặt model hoặc đường dẫn riêng cho từng máy.
-3. Mục nào không khai báo thì dùng giá trị mặc định trong `app.py`; `[ollama.options]` được **gộp** với mặc định (chỉ cần ghi tham số muốn đổi).
+3. Mục nào không khai báo thì dùng giá trị mặc định trong `xlsx_trans/config.py`; `[ollama.options]` được **gộp** với mặc định (chỉ cần ghi tham số muốn đổi).
 4. Tham số dòng lệnh và giá trị chọn trên giao diện ghi đè tất cả.
 
 Cấu hình sai (regex lỗi, `mode` không hợp lệ, TOML sai cú pháp) sẽ báo lỗi rõ ràng khi khởi động. Nếu file prompt bị thiếu, app dùng prompt mặc định trong code và in cảnh báo.
@@ -142,6 +170,23 @@ Mẹo: đóng các app nặng khi chạy; app giữ model trong RAM 30 phút gi�
 
 Đã kiểm tra với bản dịch giả lập trên file mẫu (cell, shape, biểu đồ, comment, table, nhiều sheet) và mở được bằng LibreOffice. Phần cấu hình đã kiểm tra: nạp `config.toml` / `config.local.toml` / file chỉ định bằng `-c`, prompt và options được gửi đúng cho Ollama (kiểm tra trên payload, không gọi model thật), bật/tắt `[targets]`, đổi `suffix`, cache vô hiệu khi đổi prompt, báo lỗi khi cấu hình sai. **Chưa kiểm tra trên Excel thật và với model Ollama thật** — hãy thử trên một bản sao trước khi dùng cho file quan trọng.
 
+## Cấu trúc mã nguồn
+
+```
+app.py                 điểm vào (gọi xlsx_trans.cli)
+xlsx_trans/
+  config.py            nạp config.toml/prompt, giá trị mặc định
+  ollama.py            gọi API Ollama (nơi duy nhất có code mạng)
+  cache.py             cache bản dịch theo chữ ký (model + prompt + options)
+  xlsx_xml.py          gom/áp bản dịch trên XML trong file xlsx
+  markdown.py          xuất Markdown
+  pipeline.py          dịch MỘT file (XML + cache + markdown)
+  batch.py             dịch CẢ folder: lập kế hoạch, dựng cấu trúc output
+  cli.py               tham số dòng lệnh
+  gui.py               giao diện tkinter
+tests/                 unittest
+```
+
 ## Chạy test
 
 Bộ unittest dùng thư viện chuẩn của Python, chạy từ thư mục gốc của repo:
@@ -152,7 +197,7 @@ python -m unittest discover -v
 
 - **Không cần Ollama hay mạng**: lời gọi tới Ollama được giả lập; file xlsx mẫu được dựng ngay trong test (`tests/fixtures.py`) với shared strings có furigana, inline string, công thức, comment, table, shape trong `mc:AlternateContent`, biểu đồ và SmartArt.
 - Cần `lxml` và `openpyxl` (đã có trong `requirements.txt`); các test Markdown tự bỏ qua nếu thiếu `openpyxl`.
-- Phạm vi: nạp và kiểm tra cấu hình/prompt (`test_config.py`), payload và retry gửi Ollama (`test_ollama.py`), gom/áp bản dịch trên XML (`test_collectors.py`), toàn bộ luồng dịch gồm giữ nguyên các part không đổi, bật/tắt `[targets]`, cache, dừng/tiếp tục, lỗi (`test_process.py`), xuất Markdown (`test_markdown.py`), tham số dòng lệnh (`test_cli.py`).
+- Phạm vi: nạp và kiểm tra cấu hình/prompt (`test_config.py`), payload và retry gửi Ollama (`test_ollama.py`), gom/áp bản dịch trên XML (`test_xlsx_xml.py`), toàn bộ luồng dịch gồm giữ nguyên các part không đổi, bật/tắt `[targets]`, cache, dừng/tiếp tục, lỗi (`test_process.py`), xuất Markdown (`test_markdown.py`), tham số dòng lệnh (`test_cli.py`).
 
 ## Giấy phép
 

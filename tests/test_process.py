@@ -1,15 +1,17 @@
-"""Test toàn bộ luồng process_xlsx trên file xlsx mẫu (Ollama được giả lập)."""
+"""Test toàn bộ luồng pipeline.process_xlsx trên file xlsx mẫu (Ollama được giả lập)."""
 import json
 import re
 import tempfile
 import unittest
+import warnings
 import zipfile
 from pathlib import Path
-from unittest import mock
 
 from tests import fixtures as fx
 from tests.fixtures import FakeTranslator, a_texts, default_cfg, read_zip, run_process, sst_texts
-import app
+from xlsx_trans import pipeline
+from xlsx_trans.cache import TranslationCache
+from xlsx_trans.xlsx_xml import NSMAP, parse
 
 try:
     import openpyxl
@@ -47,24 +49,23 @@ class TestTranslation(ProcessTestCase):
 
         self.assertEqual(sst_texts(parts[fx.P_SHARED]), EXPECTED_SST)
 
-        sheet = app._parse(parts[fx.P_SHEET1])
-        ns = app.NSMAP
-        self.assertEqual(sheet.xpath("//m:c[@r='A3']/m:is/m:t", namespaces=ns)[0].text, "EN[みかん]")
-        self.assertEqual(sheet.xpath("//m:c[@r='B2']/m:v", namespaces=ns)[0].text, "3")  # số giữ nguyên
-        self.assertEqual(sheet.xpath("//m:c[@r='D3']/m:f", namespaces=ns)[0].text, 'A2&"x"')  # công thức giữ nguyên
-        self.assertEqual(sheet.xpath("//m:c[@r='D3']/m:v", namespaces=ns)[0].text, "りんごx")
+        sheet = parse(parts[fx.P_SHEET1])
+        self.assertEqual(sheet.xpath("//m:c[@r='A3']/m:is/m:t", namespaces=NSMAP)[0].text, "EN[みかん]")
+        self.assertEqual(sheet.xpath("//m:c[@r='B2']/m:v", namespaces=NSMAP)[0].text, "3")  # số giữ nguyên
+        self.assertEqual(sheet.xpath("//m:c[@r='D3']/m:f", namespaces=NSMAP)[0].text, 'A2&"x"')  # công thức giữ nguyên
+        self.assertEqual(sheet.xpath("//m:c[@r='D3']/m:v", namespaces=NSMAP)[0].text, "りんごx")
 
-        comment = app._parse(parts[fx.P_COMMENTS])
-        self.assertEqual([t.text or "" for t in comment.xpath("//m:t", namespaces=ns)], ["EN[確認してください]", ""])
+        comment = parse(parts[fx.P_COMMENTS])
+        self.assertEqual([t.text or "" for t in comment.xpath("//m:t", namespaces=NSMAP)], ["EN[確認してください]", ""])
 
         # Choice + Fallback đều được dịch; đoạn tiếng Anh giữ nguyên
         self.assertEqual(a_texts(parts[fx.P_DRAWING]), ["EN[注意事項です]", "", "OK 123", "EN[注意事項です]"])
         self.assertEqual(a_texts(parts[fx.P_CHART]), ["EN[売上グラフ]"])
         self.assertEqual(a_texts(parts[fx.P_DIAGRAM]), ["EN[図表]"])
 
-        table = app._parse(parts[fx.P_TABLE])
+        table = parse(parts[fx.P_TABLE])
         self.assertEqual(
-            [c.get("name") for c in table.xpath("//m:tableColumn", namespaces=ns)],
+            [c.get("name") for c in table.xpath("//m:tableColumn", namespaces=NSMAP)],
             ["EN[名前]", "EN[数量]", "EN[備考]"],
         )
 
@@ -76,15 +77,13 @@ class TestTranslation(ProcessTestCase):
 
     def test_rich_text_furigana_is_removed_and_runs_merged(self):
         self.run_it()
-        root = app._parse(self.out_parts()[fx.P_SHARED])
-        si = root.xpath("//m:si", namespaces=app.NSMAP)[4]
-        self.assertEqual([t.text or "" for t in si.xpath("./m:r/m:t", namespaces=app.NSMAP)], ["EN[新鮮です]", ""])
-        self.assertEqual(si.xpath("./m:rPh|./m:phoneticPr", namespaces=app.NSMAP), [])
+        root = parse(self.out_parts()[fx.P_SHARED])
+        si = root.xpath("//m:si", namespaces=NSMAP)[4]
+        self.assertEqual([t.text or "" for t in si.xpath("./m:r/m:t", namespaces=NSMAP)], ["EN[新鮮です]", ""])
+        self.assertEqual(si.xpath("./m:rPh|./m:phoneticPr", namespaces=NSMAP), [])
 
     def test_source_pattern_decides_what_is_translated(self):
-        import re as _re
-
-        self.cfg.src_re = _re.compile("ABC")
+        self.cfg.src_re = re.compile("ABC")
         (applied, _), _, fake = self.run_it()
         self.assertEqual(fake.calls, ["ABC-123"])
         self.assertEqual(applied, 1)
@@ -103,14 +102,14 @@ class TestTranslation(ProcessTestCase):
         self.assertEqual(texts[4], "新鮮です | EN[新鮮です]")
         self.assertEqual(a_texts(parts[fx.P_DRAWING])[0], "注意事項です - EN[注意事項です]")
         self.assertEqual(a_texts(parts[fx.P_CHART]), ["売上グラフ - EN[売上グラフ]"])
-        comment = app._parse(parts[fx.P_COMMENTS]).xpath("//m:t", namespaces=app.NSMAP)[0].text
+        comment = parse(parts[fx.P_COMMENTS]).xpath("//m:t", namespaces=NSMAP)[0].text
         self.assertEqual(comment, "確認してください | EN[確認してください]")
 
     def test_bilingual_newline_in_table_names_is_escaped(self):
         self.cfg.mode = "bilingual"  # cell_sep mặc định là "\n"
         self.run_it()
-        table = app._parse(self.out_parts()[fx.P_TABLE])
-        names = [c.get("name") for c in table.xpath("//m:tableColumn", namespaces=app.NSMAP)]
+        table = parse(self.out_parts()[fx.P_TABLE])
+        names = [c.get("name") for c in table.xpath("//m:tableColumn", namespaces=NSMAP)]
         self.assertEqual(names[0], "名前_x000a_EN[名前]")
 
     def test_table_names_made_unique_when_translations_collide(self):
@@ -120,8 +119,8 @@ class TestTranslation(ProcessTestCase):
                 return "Same"
 
         self.run_it(fake=Same())
-        table = app._parse(self.out_parts()[fx.P_TABLE])
-        names = [c.get("name") for c in table.xpath("//m:tableColumn", namespaces=app.NSMAP)]
+        table = parse(self.out_parts()[fx.P_TABLE])
+        names = [c.get("name") for c in table.xpath("//m:tableColumn", namespaces=NSMAP)]
         self.assertEqual(names, ["Same", "Same2", "Same3"])
 
 
@@ -151,18 +150,24 @@ class TestPreservation(ProcessTestCase):
 
     def test_translated_parts_keep_xml_declaration_and_namespaces(self):
         self.run_it()
-        out = self.out_parts()
-        draw = out[fx.P_DRAWING]
+        draw = self.out_parts()[fx.P_DRAWING]
         self.assertTrue(draw.startswith(b"<?xml"))
         for token in (b"xdr:wsDr", b"mc:AlternateContent", b"mc:Fallback"):
             self.assertIn(token, draw)
         self.assertNotIn(b"ns0:", draw)
 
+    def test_file_without_japanese_is_copied_unchanged(self):
+        src = self.dir / "plain.xlsx"
+        with zipfile.ZipFile(src, "w") as z:
+            z.writestr("[Content_Types].xml", fx.fixture_parts()["[Content_Types].xml"])
+            z.writestr("xl/sharedStrings.xml", fx._p(f'<sst xmlns="{fx.MAIN}"><si><t>Hello</t></si></sst>'))
+        (applied, errors), _, fake = run_process(src, self.dir / "plain_out.xlsx", self.cfg)
+        self.assertEqual((applied, errors, fake.calls), (0, 0, []))
+        self.assertEqual(read_zip(self.dir / "plain_out.xlsx"), read_zip(src))
+
     @unittest.skipUnless(openpyxl, "cần openpyxl")
     def test_output_opens_with_openpyxl(self):
         self.run_it()
-        import warnings
-
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             wb = openpyxl.load_workbook(self.out, data_only=True)
@@ -187,7 +192,9 @@ class TestTargets(ProcessTestCase):
     }
 
     def test_each_flag_off_leaves_its_parts_untouched_and_others_translated(self):
-        self.assertEqual(set(self.FLAG_PARTS), set(app.DEFAULT_CONFIG["targets"]))
+        from xlsx_trans import config
+
+        self.assertEqual(set(self.FLAG_PARTS), set(config.DEFAULT_CONFIG["targets"]))
         for flag, off_parts in self.FLAG_PARTS.items():
             with self.subTest(flag=flag):
                 cfg = default_cfg()
@@ -276,6 +283,40 @@ class TestCache(ProcessTestCase):
         self.assertEqual(applied2, fx.UNIT_COUNT)
         self.assertEqual(sst_texts(self.out_parts()[fx.P_SHARED]), EXPECTED_SST)
 
+    def test_injected_cache_is_shared_between_files_and_not_written_next_to_output(self):
+        cache = TranslationCache(None, self.cfg.signature())  # chỉ trong bộ nhớ
+        _, _, fake1 = self.run_it(cache=cache)
+        self.assertEqual(len(fake1.calls), fx.UNIQUE_COUNT)
+        _, logs2, fake2 = self.run_it(cache=cache, out=self.dir / "out2.xlsx")
+        self.assertEqual(fake2.calls, [])
+        self.assertTrue(any("Dùng lại" in l for l in logs2))
+        self.assertFalse(self.cache_path.exists())
+
+
+class TestOutputLocations(ProcessTestCase):
+    def test_output_parent_directories_are_created(self):
+        out = self.dir / "n1" / "n2" / "out.xlsx"
+        self.run_it(out=out)
+        self.assertTrue(out.exists())
+
+    def test_markdown_default_path_is_next_to_output(self):
+        cfg = default_cfg(md=True)
+        self.run_it(cfg=cfg)
+        self.assertTrue(self.out.with_suffix(".md").exists())
+
+    @unittest.skipUnless(openpyxl, "cần openpyxl")
+    def test_custom_markdown_path_with_new_directories(self):
+        cfg = default_cfg(md=True)
+        md = self.dir / "md" / "deep" / "x.md"
+        self.run_it(cfg=cfg, md_path=md)
+        self.assertTrue(md.exists())
+        self.assertFalse(self.out.with_suffix(".md").exists())
+
+    def test_log_header_can_be_suppressed(self):
+        self.cfg.warnings = ["w"]
+        _, logs, _ = self.run_it(log_header=False)
+        self.assertFalse(any(l.startswith(("Cấu hình:", "Cảnh báo:")) for l in logs))
+
 
 class TestErrorsAndCallbacks(ProcessTestCase):
     def test_translation_failure_keeps_original_text_and_is_counted(self):
@@ -304,23 +345,22 @@ class TestErrorsAndCallbacks(ProcessTestCase):
 
     def test_output_must_differ_from_input(self):
         with self.assertRaisesRegex(ValueError, "khác"):
-            app.process_xlsx(self.src, self.src, self.cfg)
+            pipeline.process_xlsx(self.src, self.src, self.cfg)
 
     def test_unsupported_extension(self):
         with self.assertRaisesRegex(ValueError, "xlsx"):
-            app.process_xlsx(self.dir / "old.xls", self.dir / "o.xlsx", self.cfg)
+            pipeline.process_xlsx(self.dir / "old.xls", self.dir / "o.xlsx", self.cfg)
 
-    def test_file_without_japanese_is_copied_unchanged(self):
-        src = self.dir / "plain.xlsx"
-        parts = fx.fixture_parts()
-        for name in fx.TRANSLATED_PARTS:
-            parts[name] = parts[name].replace("名前".encode(), b"Name")  # chỉ để tạo file khác; vẫn còn JP
-        with zipfile.ZipFile(src, "w") as z:
-            z.writestr("[Content_Types].xml", parts["[Content_Types].xml"])
-            z.writestr("xl/sharedStrings.xml", fx._p(f'<sst xmlns="{fx.MAIN}"><si><t>Hello</t></si></sst>'))
-        (applied, errors), _, fake = run_process(src, self.dir / "plain_out.xlsx", self.cfg)
-        self.assertEqual((applied, errors, fake.calls), (0, 0, []))
-        self.assertEqual(read_zip(self.dir / "plain_out.xlsx")["xl/sharedStrings.xml"], read_zip(src)["xl/sharedStrings.xml"])
+    def test_corrupt_file_raises_bad_zip(self):
+        bad = self.dir / "bad.xlsx"
+        bad.write_bytes(b"khong phai zip")
+        with self.assertRaises(zipfile.BadZipFile):
+            pipeline.process_xlsx(bad, self.dir / "o.xlsx", self.cfg, log=lambda m: None)
+
+    def test_default_out(self):
+        self.assertEqual(pipeline.default_out("/a/b/report.xlsx", self.cfg), str(Path("/a/b/report_en.xlsx")))
+        cfg = default_cfg(suffix="_vi")
+        self.assertEqual(pipeline.default_out("x.XLSM", cfg), "x_vi.XLSM")
 
 
 if __name__ == "__main__":

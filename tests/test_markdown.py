@@ -7,7 +7,7 @@ from unittest import mock
 
 from tests import fixtures as fx
 from tests.fixtures import FakeTranslator, default_cfg, run_process
-import app
+from xlsx_trans import markdown
 
 try:
     import openpyxl
@@ -25,17 +25,17 @@ class TestHelpers(unittest.TestCase):
             (datetime.time(10, 30), "10:30:00"),
         ]
         for value, expected in cases:
-            self.assertEqual(app._md_fmt(value), expected, repr(value))
+            self.assertEqual(markdown.md_fmt(value), expected, repr(value))
 
     def test_md_cell_escapes_pipes_and_newlines(self):
-        self.assertEqual(app._md_cell(" a|b\nc "), "a\\|b<br>c")
-        self.assertEqual(app._md_cell("x\r\ny\rz"), "x<br>y<br>z")
-        self.assertEqual(app._md_cell(None), "")
+        self.assertEqual(markdown.md_cell(" a|b\nc "), "a\\|b<br>c")
+        self.assertEqual(markdown.md_cell("x\r\ny\rz"), "x<br>y<br>z")
+        self.assertEqual(markdown.md_cell(None), "")
 
     def test_resolve(self):
-        self.assertEqual(app._resolve("xl", "worksheets/sheet1.xml"), "xl/worksheets/sheet1.xml")
-        self.assertEqual(app._resolve("xl/worksheets", "../drawings/d.xml"), "xl/drawings/d.xml")
-        self.assertEqual(app._resolve("xl", "/xl/a.xml"), "xl/a.xml")
+        self.assertEqual(markdown.resolve_path("xl", "worksheets/sheet1.xml"), "xl/worksheets/sheet1.xml")
+        self.assertEqual(markdown.resolve_path("xl/worksheets", "../drawings/d.xml"), "xl/drawings/d.xml")
+        self.assertEqual(markdown.resolve_path("xl", "/xl/a.xml"), "xl/a.xml")
 
 
 @unittest.skipUnless(openpyxl, "cần openpyxl")
@@ -50,8 +50,7 @@ class MarkdownTestCase(unittest.TestCase):
 
     def translate(self, **cfg_kw):
         cfg = default_cfg(md=True, **cfg_kw)
-        fake = cfg_kw.pop("fake", None) if False else None
-        return run_process(self.src, self.out, cfg, fake)
+        return run_process(self.src, self.out, cfg)
 
     def md(self, **cfg_kw):
         self.translate(**cfg_kw)
@@ -122,7 +121,7 @@ class TestMarkdownContent(MarkdownTestCase):
 
     def test_export_failure_does_not_fail_the_translation(self):
         cfg = default_cfg(md=True)
-        with mock.patch.object(app, "export_markdown", side_effect=RuntimeError("hỏng")):
+        with mock.patch.object(markdown, "export_markdown", side_effect=RuntimeError("hỏng")):
             (applied, errors), logs, _ = run_process(self.src, self.out, cfg)
         self.assertEqual((applied, errors), (fx.UNIT_COUNT, 0))
         self.assertTrue(self.out.exists())
@@ -149,7 +148,7 @@ class TestMarkdownLimits(MarkdownTestCase):
         run_process(self.src, self.out, default_cfg())
         target = self.dir / "direct.md"
         logs = []
-        path = app.export_markdown(self.out, target, gloss=lambda n: "G!" if n == "Summary" else None,
+        path = markdown.export_markdown(self.out, target, gloss=lambda n: "G!" if n == "Summary" else None,
                                    log=logs.append, max_rows=100, max_cols=50)
         self.assertEqual(Path(path), target)
         md = target.read_text(encoding="utf-8")

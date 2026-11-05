@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import app  # noqa: E402
+from xlsx_trans import config, ollama, pipeline  # noqa: E402
+from xlsx_trans.xlsx_xml import A, NSMAP, parse  # noqa: E402
 
 MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -154,10 +155,38 @@ def fixture_parts():
 
 
 def build_fixture(path):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
         for name, data in fixture_parts().items():
             z.writestr(name, data)
-    return Path(path)
+    return path
+
+
+def make_tree(root):
+    """Tạo cây thư mục mẫu cho test batch dưới `root`.
+
+    File Excel hợp lệ (6): a.xlsx, b.xlsm, sub/c.xlsx, sub/x.xlsx, sub/x.xlsm, sub/deep/er/d.xlsx
+    Bị bỏ qua: old.xls (định dạng cũ, báo riêng), ~$lock.xlsx, .hidden/h.xlsx, notes.txt, onlytxt/readme.txt
+    """
+    root = Path(root)
+    for rel in ["a.xlsx", "b.xlsm", "sub/c.xlsx", "sub/x.xlsx", "sub/x.xlsm", "sub/deep/er/d.xlsx"]:
+        build_fixture(root / rel)
+    for rel in ["old.xls", "~$lock.xlsx", ".hidden/h.xlsx", "notes.txt", "onlytxt/readme.txt"]:
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"khong phai excel")
+    (root / "empty").mkdir(exist_ok=True)
+    return root
+
+
+VALID_FILES = {"a.xlsx", "b.xlsm", "sub/c.xlsx", "sub/x.xlsx", "sub/x.xlsm", "sub/deep/er/d.xlsx"}
+
+
+def files_under(root):
+    """Tập đường dẫn tương đối (posix) của mọi file dưới root."""
+    root = Path(root)
+    return {p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()}
 
 
 def read_zip(path):
@@ -168,8 +197,8 @@ def read_zip(path):
 # ---------------------------------------------------------------- cấu hình & mock
 def default_cfg(**overrides):
     """Config mặc định trong code, không phụ thuộc config.toml thật. Markdown tắt cho nhanh."""
-    with tempfile.TemporaryDirectory() as d, mock.patch.object(app, "APP_DIR", Path(d)):
-        cfg = app.load_config()
+    with tempfile.TemporaryDirectory() as d, mock.patch.object(config, "APP_DIR", Path(d)):
+        cfg = config.load_config()
     cfg.md = False
     for k, v in overrides.items():
         setattr(cfg, k, v)
@@ -177,7 +206,7 @@ def default_cfg(**overrides):
 
 
 class FakeTranslator:
-    """Thay app.translate_text: trả "EN[<text>]", ghi lại các lần gọi, có thể giả lập lỗi."""
+    """Thay ollama.translate_text: trả "EN[<text>]", ghi lại các lần gọi, có thể giả lập lỗi."""
 
     def __init__(self, fail_on=()):
         self.calls = []
@@ -190,23 +219,27 @@ class FakeTranslator:
         return f"EN[{text}]"
 
 
+def patch_translate(fake):
+    return mock.patch.object(ollama, "translate_text", fake)
+
+
 def run_process(src, out, cfg, fake=None, **kw):
-    """Chạy app.process_xlsx với translate_text giả. Trả về (kết quả, log, fake)."""
+    """Chạy pipeline.process_xlsx với translate_text giả. Trả về (kết quả, log, fake)."""
     fake = fake or FakeTranslator()
     logs = []
-    with mock.patch.object(app, "translate_text", fake):
-        res = app.process_xlsx(src, out, cfg, log=logs.append, **kw)
+    with patch_translate(fake):
+        res = pipeline.process_xlsx(src, out, cfg, log=logs.append, **kw)
     return res, logs, fake
 
 
 # ---------------------------------------------------------------- đọc XML
 def sst_texts(data):
-    root = app._parse(data)
+    root = parse(data)
     return [
-        "".join(t.text or "" for t in si.xpath(".//m:t[not(ancestor::m:rPh)]", namespaces=app.NSMAP))
-        for si in root.xpath("//m:si", namespaces=app.NSMAP)
+        "".join(t.text or "" for t in si.xpath(".//m:t[not(ancestor::m:rPh)]", namespaces=NSMAP))
+        for si in root.xpath("//m:si", namespaces=NSMAP)
     ]
 
 
 def a_texts(data):
-    return [t.text or "" for t in app._parse(data).iter(app.A + "t")]
+    return [t.text or "" for t in parse(data).iter(A + "t")]

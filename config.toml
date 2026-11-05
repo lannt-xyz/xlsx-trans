@@ -61,3 +61,12 @@ markdown_max_rows = 20000   # cắt mỗi sheet ở dòng này
 markdown_max_cols = 200     # chỉ đọc tối đa số cột này
 # Lưu cache bản dịch (<file output>.cache.json). Cache tự vô hiệu khi đổi model, prompt hoặc options.
 cache = true
+
+# Khi dịch cả folder: folder xlsx = <tên folder><suffix> (ví dụ data_en), folder Markdown =
+# <tên folder><suffix><markdown_suffix> (ví dụ data_en_md), cả hai nằm cạnh folder đầu vào và
+# giữ nguyên cấu trúc thư mục con.
+markdown_suffix = "_md"
+
+[batch]
+recursive = true           # quét cả thư mục con
+continue_on_error = true   # một file lỗi (hỏng, bị khóa...) thì ghi nhận rồi dịch tiếp các file còn lại
