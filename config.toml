@@ -4,7 +4,26 @@
 # - Có thể tạo thêm `config.local.toml` cạnh nó để ghi đè riêng cho máy bạn
 #   (đã nằm trong .gitignore, không bị commit).
 # - Mục nào bỏ trống/không khai báo thì dùng giá trị mặc định trong app.py.
-# - Tham số dòng lệnh (-m, --host, --mode, --no-md) luôn ưu tiên hơn file này.
+# - Tham số dòng lệnh (-m, --host, --backend, --model-path, --mode, --no-md) luôn ưu tiên hơn file này.
+
+[backend]
+# "ollama": gọi Ollama qua HTTP (mặc định) | "llama_cpp": nạp file .gguf ngay trong app (xem [llama_cpp])
+type = "ollama"
+
+[llama_cpp]
+# Chỉ dùng khi backend.type = "llama_cpp". Cần:  pip install llama-cpp-python
+# Đường dẫn tới file model GGUF (tương đối so với thư mục chứa file config này). Không commit file này lên git.
+model_path = "models/model.gguf"
+# Độ dài ngữ cảnh (token). 2048-4096 là đủ cho nội dung cell.
+n_ctx = 4096
+# Số luồng CPU (0 = tự chọn). i5-8500 có 6 nhân: thử 6.
+n_threads = 0
+# Số lớp đẩy lên GPU (0 = chỉ CPU).
+n_gpu_layers = 0
+
+[llama_cpp.options]
+# temperature, top_p, top_k, repeat_penalty, seed, num_predict (= max_tokens)
+temperature = 0
 
 [ollama]
 host = "http://localhost:11434"

@@ -12,13 +12,15 @@ def run_gui(cfg):
     from tkinter import filedialog, messagebox, scrolledtext, ttk
 
     root = tk.Tk()
-    root.title("Excel JP → EN (Ollama)")
+    root.title("Excel JP → EN (local LLM)")
     root.geometry("700x600")
 
     path_var = tk.StringVar()
     host_var = tk.StringVar(value=cfg.host)
-    model_var = tk.StringVar(value=cfg.model)
+    model_var = tk.StringVar(value=cfg.ollama_model)
     mode_var = tk.StringVar(value=cfg.mode)
+    backend_var = tk.StringVar(value=cfg.backend)
+    gguf_var = tk.StringVar(value=str(cfg.model_path))
     md_var = tk.BooleanVar(value=cfg.md)
     info_var = tk.StringVar()
     stop_flag = {"stop": False}
@@ -30,7 +32,10 @@ def run_gui(cfg):
         """Config + giá trị đang chọn trên giao diện."""
         c = copy.copy(cfg)
         c.host = host_var.get().rstrip("/")
-        c.model = model_var.get()
+        c.ollama_model = model_var.get()
+        c.backend = backend_var.get()
+        c.model_path = Path(gguf_var.get()).expanduser()
+        c.refresh()
         c.mode = mode_var.get()
         c.md = md_var.get()
         return c
@@ -72,7 +77,7 @@ def run_gui(cfg):
     ttk.Entry(frm, textvariable=host_var).grid(row=2, column=1, sticky="ew")
 
     ttk.Label(frm, text="Model:").grid(row=3, column=0, sticky="w")
-    model_box = ttk.Combobox(frm, textvariable=model_var, values=[cfg.model])
+    model_box = ttk.Combobox(frm, textvariable=model_var, values=[cfg.ollama_model])
     model_box.grid(row=3, column=1, sticky="ew")
 
     def refresh_models():
@@ -85,6 +90,22 @@ def run_gui(cfg):
             messagebox.showwarning("Ollama", "Không kết nối được Ollama. Đã chạy `ollama serve` chưa?")
 
     ttk.Button(frm, text="Tải model", command=refresh_models).grid(row=3, column=2, padx=4)
+
+    ttk.Label(frm, text="Backend:").grid(row=9, column=0, sticky="w")
+    bk = ttk.Frame(frm)
+    bk.grid(row=9, column=1, sticky="w")
+    ttk.Radiobutton(bk, text="Ollama", variable=backend_var, value="ollama").pack(side="left")
+    ttk.Radiobutton(bk, text="File .gguf (llama.cpp)", variable=backend_var, value="llama_cpp").pack(side="left", padx=10)
+    ttk.Label(frm, text="File .gguf:").grid(row=10, column=0, sticky="w", pady=4)
+    ttk.Entry(frm, textvariable=gguf_var).grid(row=10, column=1, sticky="ew")
+
+    def browse_gguf():
+        p = filedialog.askopenfilename(filetypes=[("GGUF model", "*.gguf"), ("All", "*.*")])
+        if p:
+            gguf_var.set(p)
+            backend_var.set("llama_cpp")
+
+    ttk.Button(frm, text="Chọn…", command=browse_gguf).grid(row=10, column=2, padx=4)
 
     ttk.Label(frm, text="Kiểu ghi:").grid(row=4, column=0, sticky="w", pady=4)
     mf = ttk.Frame(frm)
@@ -169,5 +190,5 @@ def run_gui(cfg):
     stop_btn.config(command=lambda: stop_flag.update(stop=True))
     for v in (path_var, mode_var, md_var):
         v.trace_add("write", show_plan)
-    root.after(200, lambda: model_box.__setitem__("values", list_models(cfg.host) or [cfg.model]))
+    root.after(200, lambda: model_box.__setitem__("values", list_models(cfg.host) or [cfg.ollama_model]))
     root.mainloop()

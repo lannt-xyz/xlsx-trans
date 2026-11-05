@@ -5,7 +5,7 @@ import zipfile
 from pathlib import Path
 
 from . import batch, gui, pipeline
-from .config import load_config
+from .config import BACKENDS, load_config
 
 
 def build_parser():
@@ -26,6 +26,8 @@ def build_parser():
         help="file Markdown (đầu vào là file) hoặc folder Markdown (đầu vào là folder; mặc định <folder><suffix><markdown_suffix>)",
     )
     ap.add_argument("-m", "--model", help="ghi đè ollama.model")
+    ap.add_argument("--backend", choices=list(BACKENDS), help="ghi đè backend.type (ollama | llama_cpp)")
+    ap.add_argument("--model-path", help="file model .gguf (tự chuyển sang backend llama_cpp)")
     ap.add_argument("--host", help="ghi đè ollama.host")
     ap.add_argument("--mode", choices=["replace", "bilingual"], help="ghi đè translate.mode")
     ap.add_argument("--no-md", action="store_true", help="không xuất Markdown")
@@ -42,7 +44,13 @@ def main(argv=None):
     except (OSError, ValueError) as e:
         sys.exit(f"Lỗi cấu hình: {e}")
     if a.model:
-        cfg.model = a.model
+        cfg.ollama_model = a.model
+    if a.backend:
+        cfg.backend = a.backend
+    if a.model_path:
+        cfg.model_path = Path(a.model_path).expanduser()
+        cfg.backend = a.backend or "llama_cpp"
+    cfg.refresh()
     if a.host:
         cfg.host = a.host.rstrip("/")
     if a.mode:

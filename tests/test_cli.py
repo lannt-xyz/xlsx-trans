@@ -149,3 +149,19 @@ class TestParser(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBackendFlags(unittest.TestCase):
+    def test_model_path_switches_to_llama_cpp(self):
+        _, proc, _, _ = run_main("in.xlsx", "--model-path", "/m/q.gguf")
+        cfg = proc.call_args[0][2]
+        self.assertEqual((cfg.backend, cfg.model, str(cfg.model_path)), ("llama_cpp", "q.gguf", "/m/q.gguf"))
+
+    def test_backend_flag(self):
+        _, proc, _, _ = run_main("in.xlsx", "--backend", "llama_cpp")
+        self.assertEqual(proc.call_args[0][2].backend, "llama_cpp")
+
+    def test_model_flag_still_targets_ollama(self):
+        _, proc, _, _ = run_main("in.xlsx", "-m", "x:1b")
+        cfg = proc.call_args[0][2]
+        self.assertEqual((cfg.backend, cfg.model), ("ollama", "x:1b"))

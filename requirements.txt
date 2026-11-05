@@ -1,3 +1,5 @@
 lxml
 openpyxl
 tomli; python_version < "3.11"
+# Tùy chọn - chỉ khi dùng backend llama_cpp (file .gguf):
+# llama-cpp-python

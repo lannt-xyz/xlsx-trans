@@ -227,3 +227,7 @@ __marimo__/
 
 # cấu hình riêng cho từng máy (ghi đè config.toml)
 config.local.toml
+
+# file model nhúng (rất nặng)
+models/
+*.gguf

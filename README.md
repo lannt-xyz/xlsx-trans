@@ -90,11 +90,30 @@ Tham số dòng lệnh **ghi đè** giá trị trong file cấu hình. Không tr
 | `--no-recursive` | Folder: chỉ xử lý file ở cấp trên cùng | `batch.recursive` |
 | `--dry-run` | Chỉ in kế hoạch, không dịch/ghi gì | — |
 | `-m`, `--model` | Tên model Ollama | `ollama.model` |
+| `--backend` | `ollama` hoặc `llama_cpp` | `backend.type` |
+| `--model-path` | File model `.gguf` (tự chuyển sang `llama_cpp`) | `llama_cpp.model_path` |
 | `--host` | Địa chỉ Ollama | `ollama.host` |
 | `--mode` | `replace` (thay bằng bản dịch) hoặc `bilingual` (JP + EN) | `translate.mode` |
 | `--no-md` | Không xuất file Markdown | `output.markdown` |
 
 File gốc **không bị sửa**. File output luôn phải khác file input.
+
+### Dùng file model .gguf (không cần Ollama)
+
+Có thể nhúng thẳng file model GGUF vào app bằng `llama-cpp-python`: model chạy ngay trong tiến trình Python, không có cổng HTTP nào.
+
+```bash
+pip install llama-cpp-python        # Windows không có compiler: thêm  --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+# tải file .gguf (vd. Qwen2.5-7B-Instruct Q4_K_M) từ Hugging Face vào thư mục models/
+python app.py data --model-path models/qwen2.5-7b-instruct-q4_k_m.gguf
+```
+
+- Hoặc đặt cố định trong `config.toml`: `[backend] type = "llama_cpp"` và `[llama_cpp] model_path = "models/....gguf"` (xem thêm `n_threads`, `n_ctx`, `n_gpu_layers`).
+- GUI có ô chọn backend và nút chọn file `.gguf`.
+- **Không commit file model lên git** (vài GB); `models/` và `*.gguf` đã nằm trong `.gitignore`.
+- Model được nạp một lần cho cả lượt dịch (kể cả cả folder). Tốc độ xấp xỉ Ollama vì cùng dùng llama.cpp.
+- Thiếu file `.gguf` hoặc thiếu thư viện thì app báo lỗi ngay từ đầu, không báo từng đoạn.
+- Cache bản dịch tách riêng theo backend và tên file model.
 
 ## Cấu hình
 
@@ -102,6 +121,8 @@ Mọi giá trị trước đây nằm cứng trong code giờ nằm trong `confi
 
 | Mục | Điều chỉnh được |
 |---|---|
+| `[backend]` | `type`: `ollama` hoặc `llama_cpp` |
+| `[llama_cpp]` | `model_path`, `n_ctx`, `n_threads`, `n_gpu_layers`, `[llama_cpp.options]` |
 | `[ollama]` | `host`, `model`, `keep_alive`, `timeout`, `retries` |
 | `[ollama.options]` | Tham số sinh văn bản truyền thẳng cho Ollama: `temperature`, `num_ctx`, `num_predict`, `top_p`... (thêm tùy ý) |
 | `[prompt]` | Đường dẫn file system prompt và user prompt |
@@ -176,7 +197,9 @@ Mẹo: đóng các app nặng khi chạy; app giữ model trong RAM 30 phút gi�
 app.py                 điểm vào (gọi xlsx_trans.cli)
 xlsx_trans/
   config.py            nạp config.toml/prompt, giá trị mặc định
+  backend.py           chọn backend model (ollama | llama_cpp)
   ollama.py            gọi API Ollama (nơi duy nhất có code mạng)
+  llama_local.py       chạy file .gguf trong tiến trình (llama-cpp-python)
   cache.py             cache bản dịch theo chữ ký (model + prompt + options)
   xlsx_xml.py          gom/áp bản dịch trên XML trong file xlsx
   markdown.py          xuất Markdown

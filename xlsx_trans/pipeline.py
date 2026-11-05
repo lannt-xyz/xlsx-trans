@@ -3,7 +3,7 @@ import zipfile
 from pathlib import Path
 
 from . import markdown as md_export
-from . import ollama as llm
+from . import backend as llm
 from .cache import TranslationCache
 from .xlsx_xml import collect_parts, dedupe_table_names, write_package
 
@@ -36,6 +36,7 @@ def process_xlsx(
         raise ValueError("File output phải khác file input (kiểm tra output.suffix trong config).")
     if in_path.suffix.lower() not in (".xlsx", ".xlsm"):
         raise ValueError("Chỉ hỗ trợ .xlsx / .xlsm (file .xls cũ hãy Save As .xlsx trước).")
+    llm.check(cfg)
 
     if log_header:
         for w in cfg.warnings:

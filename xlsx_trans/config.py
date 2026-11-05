@@ -32,7 +32,17 @@ DEFAULT_SYSTEM_PROMPT = (
 )
 DEFAULT_USER_TEMPLATE = "{text}"
 
+BACKENDS = ("ollama", "llama_cpp")
+
 DEFAULT_CONFIG = {
+    "backend": {"type": "ollama"},
+    "llama_cpp": {
+        "model_path": "models/model.gguf",
+        "n_ctx": 4096,
+        "n_threads": 0,
+        "n_gpu_layers": 0,
+        "options": {"temperature": 0},
+    },
     "ollama": {
         "host": "http://localhost:11434",
         "model": "qwen2.5:7b",
@@ -77,13 +87,21 @@ DEFAULT_CONFIG = {
 class Config:
     """Cấu hình đã nạp. Có thể copy.copy() rồi đổi thuộc tính (GUI / tham số dòng lệnh làm vậy)."""
 
+    def refresh(self):
+        """Tính lại `model` và `options` theo backend đang chọn (gọi sau khi đổi backend/model/model_path)."""
+        if self.backend == "llama_cpp":
+            self.model = Path(str(self.model_path)).name
+            self.options = dict(self.llama_options)
+        else:
+            self.model = self.ollama_model
+            self.options = dict(self.ollama_options)
+
     def signature(self):
         """Dấu vân tay của những thứ ảnh hưởng tới bản dịch; đổi thì cache cũ không dùng lại."""
-        blob = json.dumps(
-            [self.model, self.system_prompt, self.user_template, self.options],
-            sort_keys=True,
-            ensure_ascii=False,
-        )
+        parts = [self.model, self.system_prompt, self.user_template, self.options]
+        if self.backend != "ollama":
+            parts.append(self.backend)
+        blob = json.dumps(parts, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
@@ -135,13 +153,24 @@ def load_config(path=None):
     c.source_files = [str(f) for f in files]
     c.warnings = []
 
+    c.backend = str(data["backend"]["type"])
+    if c.backend not in BACKENDS:
+        raise ValueError(f'backend.type phải là một trong: {", ".join(BACKENDS)}.')
+    lc = data["llama_cpp"]
+    mp = Path(str(lc["model_path"])).expanduser()
+    c.model_path = mp if mp.is_absolute() else base_dir / mp
+    c.n_ctx = int(lc["n_ctx"])
+    c.n_threads = int(lc["n_threads"])
+    c.n_gpu_layers = int(lc["n_gpu_layers"])
+    c.llama_options = dict(lc.get("options") or {})
+
     o = data["ollama"]
     c.host = str(o["host"]).rstrip("/")
-    c.model = str(o["model"])
+    c.ollama_model = str(o["model"])
     c.keep_alive = str(o.get("keep_alive", "") or "")
     c.timeout = float(o["timeout"])
     c.retries = int(o["retries"])
-    c.options = dict(o.get("options") or {})
+    c.ollama_options = dict(o.get("options") or {})
 
     pr = data["prompt"]
     set_by_user = user_data.get("prompt", {})
@@ -180,4 +209,5 @@ def load_config(path=None):
     b = data["batch"]
     c.recursive = bool(b["recursive"])
     c.continue_on_error = bool(b["continue_on_error"])
+    c.refresh()
     return c
