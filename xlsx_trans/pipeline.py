@@ -5,8 +5,19 @@ from pathlib import Path
 from . import markdown as md_export
 from . import backend as llm
 from .cache import TranslationCache
+from . import suggest as suggestions
 from . import tables as table_fix
 from .xlsx_xml import collect_parts, dedupe_table_names, write_package
+
+
+def scan_texts(in_path, cfg):
+    """Các đoạn chữ cần dịch của một file (không gọi model). Lỗi đọc file -> [] (lỗi thật sẽ báo khi dịch)."""
+    try:
+        with zipfile.ZipFile(in_path) as zin:
+            units, _, _ = collect_parts(zin, zin.infolist(), cfg)
+    except (OSError, zipfile.BadZipFile, ValueError):
+        return []
+    return [u.text for u in units]
 
 
 def default_out(in_path, cfg):
@@ -25,11 +36,13 @@ def process_xlsx(
     md_path=None,
     cache=None,
     log_header=True,
+    review=None,
 ):
     """Dịch một file. Trả về (số đoạn đã dịch, số lỗi).
 
     md_path  nơi ghi Markdown (mặc định: <out_path>.md); chỉ dùng khi cfg.md
     cache    TranslationCache dùng chung (mặc định: cache riêng <out_path>.cache.json)
+    review   hàm review(candidates) -> {term: "add"|"ignore"} để người dùng duyệt gợi ý từ điển (None = không hỏi)
     log_header  in cảnh báo cấu hình + tóm tắt cấu hình ở đầu (batch tắt đi và in một lần)
     """
     in_path, out_path = Path(in_path), Path(out_path)
@@ -50,6 +63,7 @@ def process_xlsx(
     with zipfile.ZipFile(in_path) as zin:
         infos = zin.infolist()
         units, parsed, tables = collect_parts(zin, infos, cfg)
+        suggestions.review_texts([u.text for u in units], cfg, review, log)
         if cfg.dictionary:
             kept = [u for u in units if not cfg.dictionary.needs_translation(u.text, cfg.src_re)]
             if kept:

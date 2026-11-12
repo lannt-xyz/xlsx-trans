@@ -4,6 +4,7 @@
 #   - Dòng bắt đầu bằng # là ghi chú.
 #   - Từ nằm trong câu dài hơn vẫn được giữ nguyên; cả ô chỉ gồm từ trong danh sách thì không gọi model.
 #   - Phân biệt hoa thường; từ dài được ưu tiên khớp trước.
+#   - Khi dịch, app tự gợi ý các từ có vẻ là danh từ riêng chưa có ở đây để bạn duyệt rồi bấm thêm.
 #   - Đổi nội dung file này thì bản dịch cũ trong cache tự không dùng lại.
 #
 # Thêm nhanh từ dòng lệnh:   python app.py --dict-add person 山田太郎

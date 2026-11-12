@@ -8,6 +8,43 @@ from . import batch, dictionary, gui, pipeline
 from .config import BACKENDS, load_config
 
 
+def parse_selection(text, n):
+    """'1,3-5' -> {1,3,4,5}; 'a'/'all' -> tất cả; chỉ giữ số trong 1..n. Ném ValueError nếu sai cú pháp."""
+    text = text.strip().lower()
+    if text in ("a", "all"):
+        return set(range(1, n + 1))
+    picked = set()
+    for part in filter(None, (p.strip() for p in text.split(","))):
+        lo, _, hi = part.partition("-")
+        a, b = int(lo), int(hi or lo)
+        picked.update(range(min(a, b), max(a, b) + 1))
+    return {i for i in picked if 1 <= i <= n}
+
+
+def cli_review(cands, ask=input, out=print, interactive=None):
+    """Hỏi trên terminal xem gợi ý nào thêm vào từ điển. Không có terminal tương tác thì bỏ qua."""
+    if interactive is None:
+        interactive = sys.stdin.isatty()
+    if not interactive:
+        out(f"(Có {len(cands)} gợi ý từ điển nhưng không có terminal tương tác; bỏ qua. Dùng --dict-add để thêm tay.)")
+        return {}
+    out("\nGợi ý thêm vào từ điển GIỮ NGUYÊN tiếng Nhật (danh từ riêng chưa có trong từ điển):")
+    for i, c in enumerate(cands, 1):
+        out(f"  {i:>3}. {c.term}   [{c.category}] ×{c.count}   «{c.example}»")
+    while True:
+        ans = ask("Nhập số cần thêm (vd 1,3-5), a = tất cả, Enter = bỏ qua lần này: ")
+        try:
+            chosen = parse_selection(ans, len(cands))
+            break
+        except ValueError:
+            out("Không hiểu, hãy nhập lại.")
+    decision = {cands[i - 1].term: "add" for i in chosen}
+    rest = [c for i, c in enumerate(cands, 1) if i not in chosen]
+    if rest and ask(f"Không hỏi lại {len(rest)} từ còn lại? [y/N]: ").strip().lower() in ("y", "yes"):
+        decision.update({c.term: "ignore" for c in rest})
+    return decision
+
+
 def build_parser():
     ap = argparse.ArgumentParser(
         prog="app.py",
@@ -36,6 +73,7 @@ def build_parser():
         "--dict-add", nargs=2, metavar=("NHÓM", "TỪ"),
         help="thêm TỪ vào nhóm NHÓM (vd. screen, item, person, message) trong file từ điển đầu tiên rồi thoát",
     )
+    ap.add_argument("--no-suggest", action="store_true", help="không hỏi gợi ý thêm danh từ riêng vào từ điển")
     ap.add_argument("--dict-list", action="store_true", help="in nội dung từ điển rồi thoát")
     ap.add_argument("--no-md", action="store_true", help="không xuất Markdown")
     ap.add_argument("--no-recursive", action="store_true", help="đầu vào là folder: chỉ xử lý file ở cấp trên cùng")
@@ -70,6 +108,8 @@ def main(argv=None):
         cfg.dict_files = [Path(f).expanduser() for f in a.dict] + list(cfg.dict_files)
     if a.no_dict:
         cfg.dict_enabled = False
+    if a.no_suggest:
+        cfg.suggest = False
     if a.dict_add or a.dict_list or a.dict or a.no_dict:
         cfg.reload_dictionary()
 
@@ -98,14 +138,14 @@ def main(argv=None):
     path = Path(a.input).expanduser()
     try:
         if path.is_dir():
-            res = batch.process_folder(path, cfg, out_dir=a.output, md_dir=a.md_out, dry_run=a.dry_run)
+            res = batch.process_folder(path, cfg, out_dir=a.output, md_dir=a.md_out, dry_run=a.dry_run, review=cli_review)
             return 1 if res.failed else 0
         out = a.output or pipeline.default_out(path, cfg)
         if a.dry_run:
             md = (a.md_out or str(Path(out).with_suffix(".md"))) if cfg.md else None
             print(f"{path} -> {out}" + (f"  (+ {md})" if md else ""))
             return 0
-        pipeline.process_xlsx(path, out, cfg, md_path=a.md_out)
+        pipeline.process_xlsx(path, out, cfg, md_path=a.md_out, review=cli_review)
         return 0
     except (OSError, ValueError, zipfile.BadZipFile) as e:
         sys.exit(f"Lỗi: {e}")

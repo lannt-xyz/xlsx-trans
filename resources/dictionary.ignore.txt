@@ -1,0 +1,2 @@
+# Các từ bạn đã chọn "không hỏi lại" khi app gợi ý thêm vào từ điển. Mỗi dòng một từ, # là ghi chú.
+# Xóa dòng nào để app gợi ý lại từ đó.

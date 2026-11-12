@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import backend, pipeline
+from . import suggest as suggestions
 from .cache import TranslationCache
 
 SUPPORTED_EXT = (".xlsx", ".xlsm")
@@ -129,12 +130,14 @@ def process_folder(
     out_dir=None,
     md_dir=None,
     dry_run=False,
+    review=None,
 ):
     """Dịch mọi .xlsx/.xlsm trong folder (đệ quy nếu cfg.recursive).
 
     progress       tiến độ trong file đang dịch: (đã dịch, tổng số chuỗi)
     file_progress  tiến độ cả folder: (số file xong, tổng số file, file hiện tại)
     dry_run        chỉ in kế hoạch, không ghi gì
+    review         hàm review(candidates) -> {term: "add"|"ignore"}: gợi ý từ điển, hỏi MỘT lần cho cả folder
     Một file lỗi (hỏng, bị khóa…) được ghi nhận rồi dịch tiếp file khác nếu cfg.continue_on_error.
     """
     plan = plan_folder(in_dir, cfg, out_dir, md_dir)
@@ -160,6 +163,10 @@ def process_folder(
         log("Không có file nào để dịch.")
         return result
 
+    if review is not None and cfg.suggest and cfg.dict_enabled:
+        log("Quét các file để gợi ý từ điển...")
+        texts = [t for job in plan.jobs for t in pipeline.scan_texts(job.src, cfg)]
+        suggestions.review_texts(texts, cfg, review, log)
     backend.check(cfg)  # backend chưa dùng được thì báo ngay, không báo lỗi từng file
     cache = TranslationCache(str(plan.out_dir) + ".cache.json", cfg.signature(), cfg.cache, cfg.model)
     indent = lambda m: log("    " + m)  # noqa: E731

@@ -91,7 +91,14 @@ markdown_suffix = "_md"
 enabled = true
 # Các file từ điển, đường dẫn tương đối so với thư mục chứa file config này. File đầu tiên là nơi
 # `python app.py --dict-add <nhóm> <từ>` và nút "Từ điển…" trên giao diện ghi vào.
-files = ["dictionary.txt"]
+files = ["resources/dictionary.txt"]
+# Khi dịch file/folder, app quét trước và GỢI Ý những từ có vẻ là danh từ riêng (tên người, tên màn hình,
+# nhãn trong 「」, message, từ katakana...) chưa có trong từ điển để bạn duyệt rồi thêm.
+suggest = true
+# Số gợi ý tối đa mỗi lần hỏi (ưu tiên theo loại và số lần xuất hiện).
+suggest_max = 50
+# Từ bạn chọn "không hỏi lại" được lưu ở đây.
+ignore_file = "resources/dictionary.ignore.txt"
 # (tùy chọn) chỉ dẫn thêm cho model khi đoạn chữ có chứa từ khóa được bảo vệ. Bỏ trống = dùng mặc định trong code.
 # placeholder_note = "..."
 

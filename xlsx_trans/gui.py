@@ -186,6 +186,47 @@ def run_gui(cfg):
     start_btn.pack(side="left", padx=4)
     stop_btn.pack(side="left", padx=4)
 
+    def gui_review(cands):
+        """Chạy ở luồng dịch: mở hộp thoại trên luồng giao diện rồi chờ người dùng quyết định."""
+        done = threading.Event()
+        result = {}
+
+        def show():
+            win = tk.Toplevel(root)
+            win.title("Gợi ý thêm vào từ điển (giữ nguyên tiếng Nhật)")
+            win.geometry("640x460")
+            win.transient(root)
+            ttk.Label(
+                win, wraplength=600,
+                text="Các từ dưới đây có vẻ là danh từ riêng (tên người, màn hình, nút, message...) và chưa có trong từ điển. "
+                "Chọn những từ cần GIỮ NGUYÊN tiếng Nhật.",
+            ).pack(anchor="w", padx=8, pady=6)
+            lb = tk.Listbox(win, selectmode="extended", activestyle="none")
+            lb.pack(fill="both", expand=True, padx=8)
+            for c in cands:
+                lb.insert("end", f"{c.term}   [{c.category}] ×{c.count}   «{c.example}»")
+
+            def finish(mode):
+                chosen = set(lb.curselection())
+                for i, c in enumerate(cands):
+                    if i in chosen:
+                        result[c.term] = "add"
+                    elif mode == "never":
+                        result[c.term] = "ignore"
+                win.destroy()
+                done.set()
+
+            bar = ttk.Frame(win)
+            bar.pack(pady=8)
+            ttk.Button(bar, text="Thêm các từ đã chọn", command=lambda: finish("add")).pack(side="left", padx=4)
+            ttk.Button(bar, text="Thêm đã chọn, không hỏi lại các từ còn lại", command=lambda: finish("never")).pack(side="left", padx=4)
+            ttk.Button(bar, text="Bỏ qua lần này", command=lambda: (result.clear(), win.destroy(), done.set())).pack(side="left", padx=4)
+            win.protocol("WM_DELETE_WINDOW", lambda: (result.clear(), win.destroy(), done.set()))
+
+        root.after(0, show)
+        done.wait()
+        return result
+
     def worker(src):
         try:
             c = current_cfg()
@@ -193,11 +234,13 @@ def run_gui(cfg):
             p = Path(src)
             if p.is_dir():
                 batch.process_folder(
-                    p, c, log=log, progress=progress, file_progress=file_progress, should_stop=should_stop
+                    p, c, log=log, progress=progress, file_progress=file_progress, should_stop=should_stop,
+                    review=gui_review,
                 )
             else:
                 pipeline.process_xlsx(
-                    p, pipeline.default_out(p, c), c, log=log, progress=progress, should_stop=should_stop
+                    p, pipeline.default_out(p, c), c, log=log, progress=progress, should_stop=should_stop,
+                    review=gui_review,
                 )
         except Exception as e:  # noqa: BLE001
             log(f"LỖI: {e}")

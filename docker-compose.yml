@@ -28,7 +28,7 @@ x-common: &common
     - ./models:/models:ro
     - ./prompts:/app/prompts:ro
     - ./config.docker.toml:/app/config.docker.toml:ro
-    - ./dictionary.txt:/app/dictionary.txt  # từ điển giữ nguyên tiếng Nhật (sửa được từ trong/ngoài container)
+    - ./resources:/app/resources  # từ điển giữ nguyên tiếng Nhật + danh sách bỏ qua (app ghi vào khi bạn duyệt gợi ý)
 
 services:
   # Model .gguf chạy trong container, không mạng (dữ liệu không thể ra ngoài)

@@ -81,7 +81,10 @@ DEFAULT_CONFIG = {
     },
     "dictionary": {
         "enabled": True,
-        "files": ["dictionary.txt"],
+        "files": ["resources/dictionary.txt"],
+        "suggest": True,
+        "suggest_max": 50,
+        "ignore_file": "resources/dictionary.ignore.txt",
         "placeholder_note": PLACEHOLDER_NOTE,
     },
     "batch": {
@@ -98,10 +101,14 @@ class Config:
         """Nạp lại từ điển từ self.dict_files (GUI gọi sau khi người dùng sửa)."""
         if not self.dict_enabled:
             self.dictionary = Dictionary()
+            self.ignored = set()
             return
         missing = []
         self.dictionary = Dictionary.load(self.dict_files, missing)
         self.dict_missing = missing
+        from .suggest import load_ignored
+
+        self.ignored = load_ignored(self.dict_ignore_file)
 
     def refresh(self):
         """Tính lại `model` và `options` theo backend đang chọn (gọi sau khi đổi backend/model/model_path)."""
@@ -236,6 +243,11 @@ def load_config(path=None):
     for f in files:
         fp = Path(str(f)).expanduser()
         c.dict_files.append(fp if fp.is_absolute() else base_dir / fp)
+    c.suggest = bool(d["suggest"])
+    c.suggest_max = int(d["suggest_max"])
+    ip = Path(str(d["ignore_file"])).expanduser()
+    c.dict_ignore_file = ip if ip.is_absolute() else base_dir / ip
+    c.ignored = set()
     c.placeholder_note = str(d["placeholder_note"] or PLACEHOLDER_NOTE)
     c.dictionary = Dictionary()
     c.dict_missing = []
