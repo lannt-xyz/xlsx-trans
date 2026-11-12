@@ -43,14 +43,22 @@ def parse(data):
     return etree.fromstring(data, parser)
 
 
+XML_DECL = b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
+
+
 def serialize(root):
-    return etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+    """XML kèm khai báo kiểu Excel (nháy kép, standalone="yes")."""
+    return XML_DECL + etree.tostring(root, encoding="UTF-8")
 
 
-def set_runs(ts, new):
-    """Đặt toàn bộ bản dịch vào run đầu tiên, làm rỗng các run còn lại."""
+def set_runs(ts, new, preserve=True):
+    """Đặt toàn bộ bản dịch vào run đầu tiên, làm rỗng các run còn lại.
+
+    preserve: thêm xml:space="preserve" (chỉ đúng với <t> của SpreadsheetML; <a:t> của DrawingML không có thuộc tính này).
+    """
     ts[0].text = new
-    ts[0].set(XML_SPACE, "preserve")
+    if preserve:
+        ts[0].set(XML_SPACE, "preserve")
     for t in ts[1:]:
         t.text = ""
 
@@ -86,12 +94,21 @@ def collect_drawingml(root, units, rx, sep):
             continue
 
         def apply(new, ts=ts):
-            set_runs(ts, new)
+            set_runs(ts, new, preserve=False)
 
         units.append(Unit(text, sep, apply))
 
 
-def collect_table(root, tables, units, rx, sep):
+class TableRef:
+    """Một Table: part chứa nó, các phần tử tableColumn, tên cột gốc, chỉ số cột bị đổi tên do trùng."""
+
+    def __init__(self, part, root, cols):
+        self.part, self.root, self.cols = part, root, cols
+        self.orig = [c.get("name", "") for c in cols]
+        self.deduped = []
+
+
+def collect_table(root, tables, units, rx, sep, part=""):
     cols = root.xpath("//m:tableColumn", namespaces=NSMAP)
     if not cols:
         return
@@ -105,14 +122,14 @@ def collect_table(root, tables, units, rx, sep):
             c.set("name", new.replace("\n", "_x000a_"))
 
         units.append(Unit(text, sep, apply))
-    tables.append(cols)
+    tables.append(TableRef(part, root, cols))
 
 
 def dedupe_table_names(tables):
     """Tên cột Table phải duy nhất (không phân biệt hoa thường); bản dịch trùng thì thêm số 2, 3…"""
-    for cols in tables:
+    for t in tables:
         seen = set()
-        for c in cols:
+        for i, c in enumerate(t.cols):
             n = base = c.get("name", "")
             k = 2
             while n.lower() in seen:
@@ -120,6 +137,7 @@ def dedupe_table_names(tables):
                 k += 1
             if n != base:
                 c.set("name", n)
+                t.deduped.append(i)
             seen.add(n.lower())
 
 
@@ -169,10 +187,10 @@ def collect_parts(zin, infos, cfg):
             root = parse(zin.read(n))
             collect_drawingml(root, units, rx, cfg.shape_sep)
         elif RE_TABLE.match(n):
-            if not tg["table_headers"]:
+            if not tg["cells"]:  # tên cột Table phải trùng chữ ở ô tiêu đề, nên đi cùng với `cells`
                 continue
             root = parse(zin.read(n))
-            collect_table(root, tables, units, rx, cfg.cell_sep)
+            collect_table(root, tables, units, rx, cfg.cell_sep, n)
         if root is not None and len(units) > before:
             parsed[n] = root  # chỉ ghi lại part có đoạn cần dịch
     return units, parsed, tables
@@ -183,4 +201,9 @@ def write_package(zin, infos, out_path, parsed):
     with zipfile.ZipFile(out_path, "w") as zout:
         for info in infos:
             data = serialize(parsed[info.filename]) if info.filename in parsed else zin.read(info.filename)
-            zout.writestr(info, data, compress_type=info.compress_type)
+            # ZipInfo mới: không mang theo extra field / cờ / offset cũ của file gốc
+            zi = zipfile.ZipInfo(info.filename, info.date_time)
+            zi.compress_type = info.compress_type
+            zi.external_attr = info.external_attr
+            zi.create_system = info.create_system
+            zout.writestr(zi, data)

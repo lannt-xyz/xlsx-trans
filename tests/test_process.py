@@ -183,18 +183,17 @@ class TestPreservation(ProcessTestCase):
 
 class TestTargets(ProcessTestCase):
     FLAG_PARTS = {
-        "cells": {fx.P_SHARED, fx.P_SHEET1},
+        "cells": {fx.P_SHARED, fx.P_SHEET1, fx.P_TABLE},  # tên cột Table đi cùng ô tiêu đề
         "shapes": {fx.P_DRAWING},
         "charts": {fx.P_CHART},
         "diagrams": {fx.P_DIAGRAM},
         "comments": {fx.P_COMMENTS},
-        "table_headers": {fx.P_TABLE},
     }
 
     def test_each_flag_off_leaves_its_parts_untouched_and_others_translated(self):
         from xlsx_trans import config
 
-        self.assertEqual(set(self.FLAG_PARTS), set(config.DEFAULT_CONFIG["targets"]))
+        self.assertEqual(set(self.FLAG_PARTS), set(config.DEFAULT_CONFIG["targets"]) - {"table_headers"})
         for flag, off_parts in self.FLAG_PARTS.items():
             with self.subTest(flag=flag):
                 cfg = default_cfg()
@@ -214,6 +213,89 @@ class TestTargets(ProcessTestCase):
         self.assertEqual((applied, errors, fake.calls), (0, 0, []))
         self.assertEqual(self.out_parts(), self.src_parts)
         self.assertTrue(any("0 đoạn" in l for l in logs))
+
+
+class TestTableConsistency(ProcessTestCase):
+    """Excel báo file lỗi nếu ô tiêu đề Table khác tên cột; các test dưới đây giữ hai thứ này khớp nhau."""
+
+    def header_pairs(self, parts):
+        from xlsx_trans.tables import split_ref  # noqa: F401
+
+        shared = sst_texts(parts[fx.P_SHARED])
+        sheet = parse(parts[fx.P_SHEET1])
+        cells = []
+        for addr in ("A1", "B1", "C1"):
+            c = sheet.xpath(f"//m:c[@r='{addr}']", namespaces=NSMAP)[0]
+            if c.get("t") == "s":
+                cells.append(shared[int(c.find("{%s}v" % fx.MAIN).text)])
+            else:
+                cells.append("".join(t.text or "" for t in c.iter("{%s}t" % fx.MAIN)))
+        names = [c.get("name") for c in parse(parts[fx.P_TABLE]).xpath("//m:tableColumn", namespaces=NSMAP)]
+        return cells, names
+
+    def test_header_cells_equal_column_names_normally(self):
+        self.run_it()
+        cells, names = self.header_pairs(self.out_parts())
+        self.assertEqual(cells, names)
+
+    def test_colliding_translations_keep_headers_and_names_equal(self):
+        class Same(FakeTranslator):
+            def __call__(self, text, cfg):
+                self.calls.append(text)
+                return "Same"
+
+        self.run_it(fake=Same())
+        cells, names = self.header_pairs(self.out_parts())
+        self.assertEqual(names, ["Same", "Same2", "Same3"])
+        self.assertEqual(cells, names)
+
+    def test_bilingual_headers_match(self):
+        self.cfg.mode = "bilingual"
+        self.run_it()
+        cells, names = self.header_pairs(self.out_parts())
+        self.assertEqual([n.replace("_x000a_", "\n") for n in names], cells)
+
+    def test_cells_off_leaves_table_alone(self):
+        self.cfg.targets["cells"] = False
+        self.cfg.targets["table_headers"] = False
+        self.run_it()
+        self.assertEqual(self.out_parts()[fx.P_TABLE], self.src_parts[fx.P_TABLE])
+
+
+class TestExcelStrictness(ProcessTestCase):
+    def test_drawingml_text_has_no_xml_space_attribute(self):
+        self.run_it()
+        for name in (fx.P_DRAWING, fx.P_CHART, fx.P_DIAGRAM):
+            self.assertNotIn(b"xml:space", self.out_parts()[name], name)
+
+    def test_spreadsheetml_text_keeps_xml_space(self):
+        self.run_it()
+        self.assertIn(b'xml:space="preserve"', self.out_parts()[fx.P_SHARED])
+
+    def test_xml_declaration_uses_double_quotes(self):
+        self.run_it()
+        for name in fx.TRANSLATED_PARTS:
+            self.assertTrue(
+                self.out_parts()[name].startswith(b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'), name
+            )
+
+    def test_zip_entries_have_no_stale_extra_fields(self):
+        with zipfile.ZipFile(self.src) as z:  # gắn extra field + cờ vào file gốc để chắc chắn không bị chép sang
+            pass
+        self.run_it()
+        with zipfile.ZipFile(self.out) as z:
+            self.assertIsNone(z.testzip())
+            for i in z.infolist():
+                self.assertEqual(i.extra, b"", i.filename)
+                self.assertEqual(i.flag_bits & 0x08, 0, i.filename)
+
+    def test_all_output_parts_are_well_formed_xml(self):
+        from lxml import etree
+
+        self.run_it()
+        for name, data in self.out_parts().items():
+            if name.endswith((".xml", ".rels", ".vml")):
+                etree.fromstring(data)
 
 
 class TestCache(ProcessTestCase):

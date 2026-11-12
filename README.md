@@ -152,7 +152,7 @@ Mọi giá trị trước đây nằm cứng trong code giờ nằm trong `confi
 | `[ollama.options]` | Tham số sinh văn bản truyền thẳng cho Ollama: `temperature`, `num_ctx`, `num_predict`, `top_p`... (thêm tùy ý) |
 | `[prompt]` | Đường dẫn file system prompt và user prompt |
 | `[translate]` | `source_pattern` (regex chọn đoạn cần dịch), `mode`, ký tự nối khi song ngữ |
-| `[targets]` | Bật/tắt từng phần được dịch: `cells`, `shapes`, `charts`, `diagrams`, `comments`, `table_headers` |
+| `[targets]` | Bật/tắt từng phần được dịch: `cells`, `shapes`, `charts`, `diagrams`, `comments` (`table_headers` luôn theo `cells`) |
 | `[batch]` | `recursive` (vào thư mục con), `continue_on_error` (file lỗi thì dịch tiếp file khác) |
 | `[output]` | `suffix`, `markdown_suffix` (đuôi tên file/folder kết quả), xuất Markdown, giới hạn dòng/cột Markdown, bật/tắt cache |
 
@@ -203,6 +203,9 @@ Chạy CPU (ví dụ i5-8500, RAM 32GB, không GPU) thì tốc độ là điểm
 Mẹo: đóng các app nặng khi chạy; app giữ model trong RAM 30 phút giữa các lần gọi; các cell trùng nội dung chỉ dịch một lần.
 
 ## Giới hạn
+
+- **Excel Table:** tên cột được dịch cùng ô tiêu đề; nếu hai tiêu đề dịch ra giống nhau thì thêm số 2, 3… vào cả ô lẫn tên cột, và công thức dạng `Table1[[#This Row],[名前]]`, `[@名前]`, defined name được đổi theo. Pivot table, slicer, query table tham chiếu tên cột cũ **không** được đổi (làm mới pivot trong Excel nếu cần).
+- Công thức/điều kiện có chuỗi tiếng Nhật viết cứng (vd. `=A1="完了"`, danh sách dropdown `"はい,いいえ"`) không được dịch, nên có thể không còn khớp với cell đã dịch.
 
 - **Không dịch**: công thức, tên sheet, pivot cache, threaded comments (comment kiểu mới).
 - Tên sheet giữ nguyên để không làm hỏng công thức tham chiếu; bản dịch tên sheet chỉ xuất hiện trong file Markdown.

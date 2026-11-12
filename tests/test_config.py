@@ -137,7 +137,15 @@ class TestLoadingOrder(ConfigTestCase):
         self.write("config.toml", "[targets]\ncells = false\n")
         t = config.load_config().targets
         self.assertFalse(t["cells"])
-        self.assertTrue(all(v for k, v in t.items() if k != "cells"))
+        self.assertTrue(all(v for k, v in t.items() if k not in ("cells", "table_headers")))
+
+    def test_table_headers_follows_cells_with_warning(self):
+        self.write("config.toml", "[targets]\ncells = true\ntable_headers = false\n")
+        cfg = config.load_config()
+        self.assertTrue(cfg.targets["table_headers"])
+        self.assertTrue(any("table_headers" in w for w in cfg.warnings))
+        self.write("config.toml", "[targets]\ncells = false\n")
+        self.assertFalse(config.load_config().targets["table_headers"])
 
     def test_host_trailing_slash_is_stripped(self):
         self.write("config.toml", '[ollama]\nhost = "http://h:1///"\n')

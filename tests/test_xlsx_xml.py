@@ -85,6 +85,7 @@ class TestCollectDrawingml(unittest.TestCase):
         root, units = self.collect("<a:p><a:r><a:t>日本</a:t></a:r><a:r><a:t>語</a:t></a:r></a:p>")
         units[0].apply("Japanese")
         self.assertEqual([t.text for t in root.iter(A + "t")], ["Japanese", ""])
+        self.assertIsNone(next(root.iter(A + "t")).get(XML_SPACE))  # <a:t> không có thuộc tính này
 
 
 class TestTables(unittest.TestCase):
@@ -92,7 +93,7 @@ class TestTables(unittest.TestCase):
         cols = "".join(f'<tableColumn id="{i}" name="{n}"/>' for i, n in enumerate(names, 1))
         root = parse(f'<table xmlns="{MAIN}"><tableColumns count="{len(names)}">{cols}</tableColumns></table>')
         units, tables = [], []
-        xlsx_xml.collect_table(root, tables, units, RX, "\n")
+        xlsx_xml.collect_table(root, tables, units, RX, "\n", "xl/tables/t.xml")
         return root, units, tables
 
     def names(self, root):
@@ -102,6 +103,7 @@ class TestTables(unittest.TestCase):
         _, units, tables = self.collect(["名前", "Qty", "備考"])
         self.assertEqual([u.text for u in units], ["名前", "備考"])
         self.assertEqual(len(tables), 1)
+        self.assertEqual(tables[0].orig, ["名前", "Qty", "備考"])
 
     def test_newline_escape_is_decoded_and_encoded(self):
         root, units, _ = self.collect(["名前_x000a_ラベル"])
@@ -119,6 +121,7 @@ class TestTables(unittest.TestCase):
         root, _, tables = self.collect(["A", "a", "A"])
         xlsx_xml.dedupe_table_names(tables)
         self.assertEqual(self.names(root), ["A", "a2", "A3"])
+        self.assertEqual(tables[0].deduped, [1, 2])
 
     def test_unique_names_are_left_alone(self):
         root, _, tables = self.collect(["X", "Y", "Z"])
@@ -131,7 +134,7 @@ class TestSerialize(unittest.TestCase):
         src = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<r xmlns:a="{DML}"><a:p/></r>'.encode()
         out = xlsx_xml.serialize(xlsx_xml.parse(src))
         self.assertTrue(out.startswith(b"<?xml"))
-        self.assertIn(b"standalone='yes'", out.replace(b'"', b"'"))
+        self.assertTrue(out.startswith(b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'))
         self.assertIn(b"<a:p/>", out)
         self.assertNotIn(b"ns0", out)
 

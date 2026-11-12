@@ -61,8 +61,8 @@ bilingual_cell_sep = "\n"     # trong cell, comment, tên cột Table
 bilingual_shape_sep = " / "   # trong shape, text box, biểu đồ
 
 # Phần nào của file được dịch. Đặt false để bỏ qua.
-# Lưu ý: nếu tắt "cells" nhưng bật "table_headers" (hoặc ngược lại), tên cột của Table
-# sẽ không khớp với ô header; nên để hai mục này giống nhau.
+# Lưu ý: tên cột của Table phải trùng chữ ở ô tiêu đề, nếu không Excel báo file lỗi. Vì vậy
+# "table_headers" luôn bị ép bằng "cells" (app in cảnh báo nếu hai mục khác nhau).
 [targets]
 cells = true           # chữ trong cell
 shapes = true          # shape, text box, WordArt (xl/drawings)

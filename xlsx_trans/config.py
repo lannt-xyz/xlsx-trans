@@ -197,6 +197,10 @@ def load_config(path=None):
     c.targets = {k: bool(v) for k, v in data["targets"].items()}
     for k in DEFAULT_CONFIG["targets"]:
         c.targets.setdefault(k, True)
+    if c.targets["table_headers"] != c.targets["cells"]:
+        # Excel báo file lỗi nếu tên cột Table khác chữ ở ô tiêu đề, nên hai mục này phải đi cùng nhau
+        c.warnings.append('targets.table_headers luôn theo targets.cells (tên cột Table phải trùng ô tiêu đề); đã đặt cùng giá trị.')
+        c.targets["table_headers"] = c.targets["cells"]
 
     out = data["output"]
     c.suffix = str(out["suffix"])

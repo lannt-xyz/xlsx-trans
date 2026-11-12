@@ -5,6 +5,7 @@ from pathlib import Path
 from . import markdown as md_export
 from . import backend as llm
 from .cache import TranslationCache
+from . import tables as table_fix
 from .xlsx_xml import collect_parts, dedupe_table_names, write_package
 
 
@@ -86,6 +87,7 @@ def process_xlsx(
             u.apply(en if cfg.mode == "replace" else f"{u.text}{u.sep}{en}")
             applied += 1
         dedupe_table_names(tables)
+        table_fix.sync(zin, infos, parsed, tables, log)
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
         write_package(zin, infos, out_path, parsed)
