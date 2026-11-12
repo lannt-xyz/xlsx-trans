@@ -107,6 +107,36 @@ def run_gui(cfg):
 
     ttk.Button(frm, text="Chọn…", command=browse_gguf).grid(row=10, column=2, padx=4)
 
+    def edit_dictionary():
+        target = cfg.dict_files[0]
+        win = tk.Toplevel(root)
+        win.title(f"Từ điển giữ nguyên tiếng Nhật — {target.name}")
+        win.geometry("520x460")
+        ttk.Label(
+            win, text="Mỗi dòng một từ; [nhóm] để chia nhóm; # là ghi chú. Các từ này sẽ KHÔNG bị dịch.",
+            wraplength=480,
+        ).pack(anchor="w", padx=8, pady=6)
+        box = scrolledtext.ScrolledText(win)
+        box.pack(fill="both", expand=True, padx=8)
+        try:
+            box.insert("1.0", target.read_text(encoding="utf-8-sig"))
+        except OSError:
+            pass
+
+        def save():
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(box.get("1.0", "end-1c").rstrip() + "\n", encoding="utf-8")
+            except OSError as e:
+                messagebox.showerror("Lỗi", str(e), parent=win)
+                return
+            cfg.reload_dictionary()
+            win.destroy()
+
+        ttk.Button(win, text="Lưu", command=save).pack(pady=8)
+
+    ttk.Button(frm, text="Từ điển…", command=edit_dictionary).grid(row=11, column=2, padx=4, pady=4, sticky="e")
+
     ttk.Label(frm, text="Kiểu ghi:").grid(row=4, column=0, sticky="w", pady=4)
     mf = ttk.Frame(frm)
     mf.grid(row=4, column=1, sticky="w")

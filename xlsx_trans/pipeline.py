@@ -50,6 +50,12 @@ def process_xlsx(
     with zipfile.ZipFile(in_path) as zin:
         infos = zin.infolist()
         units, parsed, tables = collect_parts(zin, infos, cfg)
+        if cfg.dictionary:
+            kept = [u for u in units if not cfg.dictionary.needs_translation(u.text, cfg.src_re)]
+            if kept:
+                log(f"Từ điển: giữ nguyên {len(kept)} đoạn (chỉ gồm từ trong danh sách giữ nguyên).")
+                keep_ids = {id(u) for u in kept}
+                units = [u for u in units if id(u) not in keep_ids]
         unique = list(dict.fromkeys(u.text for u in units))
         log(f"Tìm thấy {len(units)} đoạn chữ cần dịch ({len(unique)} chuỗi khác nhau).")
 
@@ -98,7 +104,9 @@ def process_xlsx(
         target = Path(md_path) if md_path else out_path.with_suffix(".md")
 
         def gloss(name):  # bản dịch tên sheet, chỉ để tham khảo trong .md (Excel giữ tên gốc)
-            if not cfg.src_re.search(name):
+            if not cfg.src_re.search(name) or (
+                cfg.dictionary and not cfg.dictionary.needs_translation(name, cfg.src_re)
+            ):
                 return None
             if name not in cache:
                 try:

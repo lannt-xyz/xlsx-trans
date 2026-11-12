@@ -153,6 +153,7 @@ Mọi giá trị trước đây nằm cứng trong code giờ nằm trong `confi
 | `[prompt]` | Đường dẫn file system prompt và user prompt |
 | `[translate]` | `source_pattern` (regex chọn đoạn cần dịch), `mode`, ký tự nối khi song ngữ |
 | `[targets]` | Bật/tắt từng phần được dịch: `cells`, `shapes`, `charts`, `diagrams`, `comments` (`table_headers` luôn theo `cells`) |
+| `[dictionary]` | `enabled`, `files` (các file từ điển giữ nguyên tiếng Nhật), `placeholder_note` |
 | `[batch]` | `recursive` (vào thư mục con), `continue_on_error` (file lỗi thì dịch tiếp file khác) |
 | `[output]` | `suffix`, `markdown_suffix` (đuôi tên file/folder kết quả), xuất Markdown, giới hạn dòng/cột Markdown, bật/tắt cache |
 
@@ -164,6 +165,33 @@ Cách nạp cấu hình:
 4. Tham số dòng lệnh và giá trị chọn trên giao diện ghi đè tất cả.
 
 Cấu hình sai (regex lỗi, `mode` không hợp lệ, TOML sai cú pháp) sẽ báo lỗi rõ ràng khi khởi động. Nếu file prompt bị thiếu, app dùng prompt mặc định trong code và in cảnh báo.
+
+### Từ điển giữ nguyên tiếng Nhật
+
+Tên màn hình, tên item, tên người, message... cần để nguyên tiếng Nhật thì thêm vào `dictionary.txt` (mỗi dòng một từ, chia nhóm bằng `[tên nhóm]`, dòng `#` là ghi chú):
+
+```
+[screen]
+ログイン画面
+[person]
+山田太郎
+[message]
+保存しました。
+```
+
+```bash
+python app.py --dict-add person 山田太郎     # thêm nhanh vào file từ điển đầu tiên
+python app.py --dict-list                    # xem danh sách
+python app.py data --dict khac.txt           # thêm file từ điển (dùng được nhiều lần); --no-dict để tắt
+```
+
+Giao diện có nút **Từ điển…** để sửa trực tiếp file.
+
+- Ô chỉ gồm từ trong danh sách (cả khi kèm số, dấu câu) → giữ nguyên, **không gọi model**. Áp dụng cả cho tiêu đề Table (ô và tên cột vẫn khớp nhau) và tên sheet trong Markdown.
+- Từ nằm trong câu dài hơn → được thay bằng ký hiệu `[[1]]`, `[[2]]`… trước khi gửi cho model rồi khôi phục đúng chữ gốc sau khi dịch. Nếu model làm mất ký hiệu, app thử lại một lần; vẫn mất thì đoạn đó giữ nguyên bản gốc và tính là một lỗi trong log. Model nhỏ đôi khi làm mất ký hiệu, nên hãy kiểm tra log.
+- Từ dài được khớp trước (「ログイン画面」 trước 「ログイン」); phân biệt hoa thường; khớp theo chuỗi con, nên từ ngắn như 「会」 sẽ khớp cả trong 「会社」.
+- Sửa từ điển thì cache bản dịch cũ tự không dùng lại. Trong Docker, `dictionary.txt` được mount vào container.
+- Thay đổi chỉ dẫn gửi cho model về ký hiệu bằng `[dictionary] placeholder_note` trong `config.toml`.
 
 ### Tùy chỉnh prompt
 
@@ -227,6 +255,8 @@ Dockerfile, docker-compose.yml, config.docker.toml   chạy trong container
 xlsx_trans/
   config.py            nạp config.toml/prompt, giá trị mặc định
   backend.py           chọn backend model (ollama | llama_cpp)
+  dictionary.py        từ điển giữ nguyên tiếng Nhật (bảo vệ/khôi phục từ khóa)
+  tables.py            giữ Excel Table nhất quán sau khi dịch
   ollama.py            gọi API Ollama (nơi duy nhất có code mạng)
   llama_local.py       chạy file .gguf trong tiến trình (llama-cpp-python)
   cache.py             cache bản dịch theo chữ ký (model + prompt + options)

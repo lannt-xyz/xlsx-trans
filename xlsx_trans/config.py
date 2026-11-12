@@ -9,6 +9,8 @@ import re
 import sys
 from pathlib import Path
 
+from .dictionary import PLACEHOLDER_NOTE, Dictionary
+
 try:
     import tomllib
 except ImportError:  # Python < 3.11
@@ -77,6 +79,11 @@ DEFAULT_CONFIG = {
         "markdown_max_cols": 200,
         "cache": True,
     },
+    "dictionary": {
+        "enabled": True,
+        "files": ["dictionary.txt"],
+        "placeholder_note": PLACEHOLDER_NOTE,
+    },
     "batch": {
         "recursive": True,
         "continue_on_error": True,
@@ -86,6 +93,15 @@ DEFAULT_CONFIG = {
 
 class Config:
     """Cấu hình đã nạp. Có thể copy.copy() rồi đổi thuộc tính (GUI / tham số dòng lệnh làm vậy)."""
+
+    def reload_dictionary(self):
+        """Nạp lại từ điển từ self.dict_files (GUI gọi sau khi người dùng sửa)."""
+        if not self.dict_enabled:
+            self.dictionary = Dictionary()
+            return
+        missing = []
+        self.dictionary = Dictionary.load(self.dict_files, missing)
+        self.dict_missing = missing
 
     def refresh(self):
         """Tính lại `model` và `options` theo backend đang chọn (gọi sau khi đổi backend/model/model_path)."""
@@ -101,6 +117,8 @@ class Config:
         parts = [self.model, self.system_prompt, self.user_template, self.options]
         if self.backend != "ollama":
             parts.append(self.backend)
+        if self.dictionary:  # chỉ khi có từ điển, để cache cũ (không dùng từ điển) vẫn hợp lệ
+            parts += [self.dictionary.signature(), self.placeholder_note]
         blob = json.dumps(parts, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
@@ -209,6 +227,22 @@ def load_config(path=None):
     c.md_max_rows = int(out["markdown_max_rows"])
     c.md_max_cols = int(out["markdown_max_cols"])
     c.cache = bool(out["cache"])
+
+    d = data["dictionary"]
+    c.dict_enabled = bool(d["enabled"])
+    declared = "files" in user_data.get("dictionary", {})
+    files = d["files"] if isinstance(d["files"], list) else [d["files"]]
+    c.dict_files = []
+    for f in files:
+        fp = Path(str(f)).expanduser()
+        c.dict_files.append(fp if fp.is_absolute() else base_dir / fp)
+    c.placeholder_note = str(d["placeholder_note"] or PLACEHOLDER_NOTE)
+    c.dictionary = Dictionary()
+    c.dict_missing = []
+    c.reload_dictionary()
+    if declared:  # đường dẫn do người dùng khai báo mà thiếu file thì báo; đường dẫn mặc định thì im lặng
+        for m in c.dict_missing:
+            c.warnings.append(f"Không đọc được file từ điển: {m}")
 
     b = data["batch"]
     c.recursive = bool(b["recursive"])

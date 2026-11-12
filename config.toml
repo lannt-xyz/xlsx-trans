@@ -86,6 +86,15 @@ cache = true
 # giữ nguyên cấu trúc thư mục con.
 markdown_suffix = "_md"
 
+[dictionary]
+# Từ điển GIỮ NGUYÊN tiếng Nhật (tên màn hình, tên item, tên người, message...). Xem dictionary.txt.
+enabled = true
+# Các file từ điển, đường dẫn tương đối so với thư mục chứa file config này. File đầu tiên là nơi
+# `python app.py --dict-add <nhóm> <từ>` và nút "Từ điển…" trên giao diện ghi vào.
+files = ["dictionary.txt"]
+# (tùy chọn) chỉ dẫn thêm cho model khi đoạn chữ có chứa từ khóa được bảo vệ. Bỏ trống = dùng mặc định trong code.
+# placeholder_note = "..."
+
 [batch]
 recursive = true           # quét cả thư mục con
 continue_on_error = true   # một file lỗi (hỏng, bị khóa...) thì ghi nhận rồi dịch tiếp các file còn lại

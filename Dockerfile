@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
-COPY app.py config.toml config.docker.toml ./
+COPY app.py config.toml config.docker.toml dictionary.txt ./
 COPY xlsx_trans ./xlsx_trans
 COPY prompts ./prompts
 # Dữ liệu nằm ở /work (mount từ máy), model .gguf ở /models (mount từ máy)

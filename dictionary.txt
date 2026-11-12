@@ -1,0 +1,25 @@
+# Từ điển GIỮ NGUYÊN tiếng Nhật: những từ liệt kê ở đây sẽ không bị dịch.
+#
+#   - Mỗi dòng một từ. Chia nhóm bằng [tên nhóm] (nhóm chỉ để bạn dễ quản lý, tên tùy ý).
+#   - Dòng bắt đầu bằng # là ghi chú.
+#   - Từ nằm trong câu dài hơn vẫn được giữ nguyên; cả ô chỉ gồm từ trong danh sách thì không gọi model.
+#   - Phân biệt hoa thường; từ dài được ưu tiên khớp trước.
+#   - Đổi nội dung file này thì bản dịch cũ trong cache tự không dùng lại.
+#
+# Thêm nhanh từ dòng lệnh:   python app.py --dict-add person 山田太郎
+# Xem danh sách:             python app.py --dict-list
+#
+# Ví dụ (bỏ dấu # ở đầu dòng để dùng):
+#
+# [screen]
+# ログイン画面
+# 受注一覧
+#
+# [item]
+# 商品コード
+#
+# [person]
+# 山田太郎
+#
+# [message]
+# 保存しました。
