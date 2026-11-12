@@ -33,6 +33,37 @@ class TestTokens(unittest.TestCase):
         self.assertEqual(tokens.TokenCounter("estimate").kind, "estimate")
 
 
+class TestTiktokenCache(unittest.TestCase):
+    def test_cache_dir_defaults_to_project_resources_and_respects_env(self):
+        fake = mock.MagicMock()
+        fake.get_encoding.return_value.encode.return_value = [1, 2, 3]
+        with mock.patch.dict("sys.modules", {"tiktoken": fake}), mock.patch.dict("os.environ", clear=False) as env:
+            env.pop("TIKTOKEN_CACHE_DIR", None)
+            c = tokens.TokenCounter("o200k_base")
+            self.assertEqual(c("abc"), 3)
+            self.assertEqual(c.kind, "tiktoken:o200k_base")
+            self.assertEqual(Path(env["TIKTOKEN_CACHE_DIR"]), tokens.CACHE_DIR)
+            self.assertEqual(tokens.CACHE_DIR.name, "tiktoken")
+        with mock.patch.dict("sys.modules", {"tiktoken": fake}), mock.patch.dict("os.environ", {"TIKTOKEN_CACHE_DIR": "/x"}):
+            tokens.TokenCounter("o200k_base")
+            import os
+
+            self.assertEqual(os.environ["TIKTOKEN_CACHE_DIR"], "/x")
+
+    def test_prefetch_reports_failure_without_tiktoken(self):
+        with mock.patch.dict("sys.modules", {"tiktoken": None}):
+            ok, msg = tokens.prefetch("o200k_base")
+        self.assertFalse(ok)
+        self.assertIn("tiktoken", msg)
+
+    def test_cli_prefetch_exit_code(self):
+        with mock.patch.object(tokens, "prefetch", return_value=(True, "ok")), mock.patch("builtins.print") as pr:
+            self.assertEqual(cli.main(["--prefetch-tokenizer"]), 0)
+        pr.assert_called_with("ok")
+        with mock.patch.object(tokens, "prefetch", return_value=(False, "no")), mock.patch("builtins.print"):
+            self.assertEqual(cli.main(["--prefetch-tokenizer"]), 1)
+
+
 class TestFormat(unittest.TestCase):
     def test_newline_roundtrip(self):
         self.assertEqual(manual.encode_item("a\r\nb\nc"), "a<br>b<br>c")

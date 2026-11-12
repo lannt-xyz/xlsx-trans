@@ -4,7 +4,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-from . import batch, dictionary, gui, manual, pipeline
+from . import batch, dictionary, gui, manual, pipeline, tokens
 from .config import BACKENDS, load_config
 
 
@@ -103,6 +103,10 @@ def build_parser():
         "--manual-import", metavar="THƯ_MỤC",
         help="nhập kết quả chat (block-NNN.out.txt), rồi tạo file xlsx/md từ cache",
     )
+    ap.add_argument(
+        "--prefetch-tokenizer", action="store_true",
+        help="tải sẵn bảng từ vựng tiktoken (CÓ dùng mạng, một lần) vào resources/tiktoken rồi thoát",
+    )
     ap.add_argument("--no-suggest", action="store_true", help="không hỏi gợi ý thêm danh từ riêng vào từ điển")
     ap.add_argument("--dict-list", action="store_true", help="in nội dung từ điển rồi thoát")
     ap.add_argument("--no-md", action="store_true", help="không xuất Markdown")
@@ -143,6 +147,10 @@ def main(argv=None):
     if a.dict_add or a.dict_list or a.dict or a.no_dict:
         cfg.reload_dictionary()
 
+    if a.prefetch_tokenizer:
+        ok, msg = tokens.prefetch(cfg.manual_tokenizer)
+        print(msg)
+        return 0 if ok else 1
     if a.dict_add:
         target = cfg.dict_files[0]
         try:

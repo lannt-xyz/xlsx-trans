@@ -104,7 +104,9 @@ ignore_file = "resources/dictionary.ignore.txt"
 
 [manual]
 # Dịch THỦ CÔNG qua chat bên ngoài (nút "Dịch thủ công (chat)…" hoặc --manual-export / --manual-import).
-# Bộ đếm token để chia khối cho vừa cửa sổ ngữ cảnh (cần: pip install tiktoken; không có thì ước lượng thận trọng).
+# Bộ đếm token để chia khối cho vừa cửa sổ ngữ cảnh. Chính xác: pip install tiktoken, rồi chạy một lần
+# `python app.py --prefetch-tokenizer` (có dùng mạng để tải bảng từ vựng). Không có tiktoken thì ước lượng thận trọng;
+# đặt "estimate" để không bao giờ thử nạp tiktoken.
 tokenizer = "o200k_base"
 # Số token tối đa của MỘT khối (chỉ dẫn + các mục). Kết quả chat cũng dài cỡ đó, nên đừng đặt sát cửa sổ ngữ cảnh
 # (200k) mà hãy theo giới hạn độ dài câu trả lời của chat. Tăng dần nếu chat trả đủ.
