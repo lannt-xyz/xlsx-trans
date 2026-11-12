@@ -98,6 +98,29 @@ Tham số dòng lệnh **ghi đè** giá trị trong file cấu hình. Không tr
 
 File gốc **không bị sửa**. File output luôn phải khác file input.
 
+### Dịch thủ công qua chat (không cần model chạy trên máy)
+
+Khi model local quá chậm, bạn có thể dùng một công cụ chat bên ngoài (vd. chat nội bộ của công ty): app chia nội dung thành các **khối** vừa cửa sổ ngữ cảnh, bạn copy từng khối vào chat, dán kết quả lại, app tự ghi vào cache rồi tạo file xlsx / md đúng cấu trúc `_en` / `_en_md`.
+
+Trên giao diện: chọn file/folder → **Dịch thủ công (chat)…**
+1. Copy khối hiện tại (nút **Copy khối này**) → dán vào chat.
+2. Dán câu trả lời của chat vào ô bên dưới → **Lưu kết quả của khối này**. App báo đã lưu bao nhiêu mục, mục nào thiếu hoặc hỏng; khối đó được thay bằng một khối mới chỉ gồm các mục cần hỏi lại.
+3. Làm hết các khối (hoặc dừng giữa chừng, tiến độ nằm trong cache) → **Tạo file xlsx / md từ bản dịch đã có**.
+
+Dòng lệnh / Docker (không cần giao diện):
+```bash
+python app.py data --manual-export ./blocks      # tạo blocks/block-001.txt, block-001.json...
+# dán block-001.txt vào chat, lưu câu trả lời vào blocks/block-001.out.txt (làm tương tự các khối khác)
+python app.py data --manual-import ./blocks      # kiểm tra, ghi cache, rồi tạo file; mục thiếu -> block-001-retry1.txt
+```
+
+- Mỗi mục là một dòng `[n] nội dung`; xuống dòng trong ô được mã hóa thành `<br>`. Chat phải trả lại đúng `[n] bản dịch`, cùng số thứ tự.
+- Chia khối theo token (`manual.tokenizer = "o200k_base"` nếu cài `tiktoken`, không có thì ước lượng dư). `block_tokens` mặc định 6000: kết quả chat cũng dài cỡ đó và nhiều chat giới hạn độ dài câu trả lời, nên đừng đặt sát cửa sổ ngữ cảnh; tăng dần nếu chat trả đủ. tiktoken tải bảng từ vựng một lần khi dùng lần đầu; máy không có mạng thì đặt sẵn `TIKTOKEN_CACHE_DIR` hoặc dùng ước lượng.
+- Từ điển giữ nguyên tiếng Nhật vẫn áp dụng: từ khóa được thay bằng `[[n]]` trong khối gửi đi và khôi phục khi nhập; mục nào chat làm mất `[[n]]` sẽ bị từ chối và đưa vào khối hỏi lại. Ô chỉ gồm từ khóa không cần gửi.
+- Chuỗi trùng chỉ gửi một lần; chuỗi đã có trong cache không gửi lại. Chuỗi nào chưa có bản dịch khi tạo file thì giữ nguyên tiếng Nhật và được báo lỗi trong log.
+- **Dữ liệu sẽ đi sang công cụ chat bên ngoài app**: chỉ dùng chat đã được phép nhận loại dữ liệu này.
+- Chỉnh chỉ dẫn gửi kèm đầu khối ở `prompts/manual.txt`.
+
 ### Dùng file model .gguf (không cần Ollama)
 
 Có thể nhúng thẳng file model GGUF vào app bằng `llama-cpp-python`: model chạy ngay trong tiến trình Python, không có cổng HTTP nào.
@@ -153,6 +176,7 @@ Mọi giá trị trước đây nằm cứng trong code giờ nằm trong `confi
 | `[prompt]` | Đường dẫn file system prompt và user prompt |
 | `[translate]` | `source_pattern` (regex chọn đoạn cần dịch), `mode`, ký tự nối khi song ngữ |
 | `[targets]` | Bật/tắt từng phần được dịch: `cells`, `shapes`, `charts`, `diagrams`, `comments` (`table_headers` luôn theo `cells`) |
+| `[manual]` | `tokenizer`, `block_tokens`, `block_max_items`, `instruction_file` (dịch thủ công qua chat) |
 | `[dictionary]` | `enabled`, `files` (file từ điển giữ nguyên tiếng Nhật), `suggest`, `suggest_max`, `ignore_file`, `placeholder_note` |
 | `[batch]` | `recursive` (vào thư mục con), `continue_on_error` (file lỗi thì dịch tiếp file khác) |
 | `[output]` | `suffix`, `markdown_suffix` (đuôi tên file/folder kết quả), xuất Markdown, giới hạn dòng/cột Markdown, bật/tắt cache |
@@ -272,6 +296,8 @@ Dockerfile, docker-compose.yml, config.docker.toml   chạy trong container
 xlsx_trans/
   config.py            nạp config.toml/prompt, giá trị mặc định
   backend.py           chọn backend model (ollama | llama_cpp)
+  manual.py            dịch thủ công qua chat: chia khối, nhập kết quả
+  tokens.py            đếm token (tiktoken hoặc ước lượng)
   suggest.py           gợi ý danh từ riêng chưa có trong từ điển
   dictionary.py        từ điển giữ nguyên tiếng Nhật (bảo vệ/khôi phục từ khóa)
   tables.py            giữ Excel Table nhất quán sau khi dịch

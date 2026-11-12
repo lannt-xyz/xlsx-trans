@@ -102,6 +102,18 @@ ignore_file = "resources/dictionary.ignore.txt"
 # (tùy chọn) chỉ dẫn thêm cho model khi đoạn chữ có chứa từ khóa được bảo vệ. Bỏ trống = dùng mặc định trong code.
 # placeholder_note = "..."
 
+[manual]
+# Dịch THỦ CÔNG qua chat bên ngoài (nút "Dịch thủ công (chat)…" hoặc --manual-export / --manual-import).
+# Bộ đếm token để chia khối cho vừa cửa sổ ngữ cảnh (cần: pip install tiktoken; không có thì ước lượng thận trọng).
+tokenizer = "o200k_base"
+# Số token tối đa của MỘT khối (chỉ dẫn + các mục). Kết quả chat cũng dài cỡ đó, nên đừng đặt sát cửa sổ ngữ cảnh
+# (200k) mà hãy theo giới hạn độ dài câu trả lời của chat. Tăng dần nếu chat trả đủ.
+block_tokens = 6000
+# Số mục tối đa mỗi khối (khối quá nhiều mục thì chat dễ bỏ sót dòng).
+block_max_items = 300
+# Chỉ dẫn gửi kèm đầu mỗi khối (sau system prompt). Sửa file này để hợp với chat của bạn.
+instruction_file = "prompts/manual.txt"
+
 [batch]
 recursive = true           # quét cả thư mục con
 continue_on_error = true   # một file lỗi (hỏng, bị khóa...) thì ghi nhận rồi dịch tiếp các file còn lại

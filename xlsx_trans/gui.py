@@ -3,7 +3,7 @@ import copy
 import threading
 from pathlib import Path
 
-from . import batch, pipeline
+from . import batch, manual, pipeline
 from .ollama import list_models
 
 
@@ -183,7 +183,9 @@ def run_gui(cfg):
     btns.grid(row=8, column=0, columnspan=3, pady=8)
     start_btn = ttk.Button(btns, text="Bắt đầu dịch")
     stop_btn = ttk.Button(btns, text="Dừng", state="disabled")
+    manual_btn = ttk.Button(btns, text="Dịch thủ công (chat)…", command=lambda: manual_dialog())
     start_btn.pack(side="left", padx=4)
+    manual_btn.pack(side="left", padx=4)
     stop_btn.pack(side="left", padx=4)
 
     def gui_review(cands):
@@ -226,6 +228,132 @@ def run_gui(cfg):
         root.after(0, show)
         done.wait()
         return result
+
+    def manual_dialog():
+        """Dịch qua chat bên ngoài: copy từng khối, dán kết quả lại, rồi tạo file."""
+        src = path_var.get()
+        if not src or not Path(src).exists():
+            messagebox.showerror("Lỗi", "Chọn file Excel hoặc folder trước.")
+            return
+        manual_btn.config(state="disabled")
+        log("Dịch thủ công: đang quét và chia khối...")
+
+        def scan():
+            try:
+                session = manual.ManualSession(current_cfg(), src)
+                session.scan()
+            except Exception as e:  # noqa: BLE001
+                log(f"LỖI: {e}")
+                root.after(0, lambda: manual_btn.config(state="normal"))
+                return
+            root.after(0, lambda: show(session))
+
+        def show(session):
+            manual_btn.config(state="normal")
+            if not session.blocks:
+                log("Mọi chuỗi đã có bản dịch trong cache (hoặc không có gì cần dịch). Bấm Tạo file để xuất kết quả.")
+            win = tk.Toplevel(root)
+            win.title("Dịch thủ công qua chat")
+            win.geometry("760x640")
+            pos = {"i": 0}
+            head_var = tk.StringVar()
+            status_var = tk.StringVar()
+
+            ttk.Label(win, textvariable=head_var, font=("TkDefaultFont", 10, "bold")).pack(anchor="w", padx=8, pady=(8, 0))
+            ttk.Label(win, text="1) Copy khối này vào chat   2) Dán kết quả chat vào ô dưới   3) Lưu kết quả").pack(anchor="w", padx=8)
+            prompt_box = scrolledtext.ScrolledText(win, height=12, state="disabled")
+            prompt_box.pack(fill="both", expand=True, padx=8, pady=4)
+            bar1 = ttk.Frame(win)
+            bar1.pack(fill="x", padx=8)
+            result_box = scrolledtext.ScrolledText(win, height=12)
+            result_box.pack(fill="both", expand=True, padx=8, pady=4)
+            ttk.Label(win, textvariable=status_var, wraplength=720, foreground="#555").pack(anchor="w", padx=8)
+            bar2 = ttk.Frame(win)
+            bar2.pack(pady=8)
+
+            def current():
+                return session.blocks[pos["i"]] if session.blocks else None
+
+            def refresh():
+                n = len(session.blocks)
+                pos["i"] = min(pos["i"], max(n - 1, 0))
+                b = current()
+                prompt_box.configure(state="normal")
+                prompt_box.delete("1.0", "end")
+                result_box.delete("1.0", "end")
+                if b:
+                    head_var.set(
+                        f"Khối {pos['i'] + 1}/{n} — {len(b.items)} mục — {b.tokens} token ({session.counter.kind}) — "
+                        f"đã có {session.done_count()}/{session.total} bản dịch"
+                    )
+                    prompt_box.insert("1.0", b.prompt)
+                else:
+                    head_var.set(f"Hết khối cần dịch — đã có {session.done_count()}/{session.total} bản dịch. Bấm Tạo file.")
+                prompt_box.configure(state="disabled")
+
+            def copy_block():
+                b = current()
+                if b:
+                    win.clipboard_clear()
+                    win.clipboard_append(b.prompt)
+                    status_var.set("Đã copy khối vào clipboard. Dán vào chat rồi chờ kết quả.")
+
+            def save_result():
+                b = current()
+                if not b:
+                    return
+                text = result_box.get("1.0", "end-1c")
+                if not text.strip():
+                    status_var.set("Ô kết quả đang trống.")
+                    return
+                res = session.apply_output(b, text)
+                msg = f"Đã lưu {len(res.saved)} bản dịch."
+                if res.suspect:
+                    msg += f" {len(res.suspect)} mục vẫn còn tiếng Nhật (chat có thể chưa dịch): {res.suspect}."
+                if res.extra:
+                    msg += f" Bỏ qua {res.extra} dòng có số không thuộc khối này."
+                retry = session.retry_block(b, res) if res.retry_ids else []
+                if res.missing:
+                    msg += f" Thiếu mục {res.missing}."
+                if res.bad:
+                    msg += " Lỗi: " + "; ".join(f"{i} ({why})" for i, why in res.bad) + "."
+                i = pos["i"]
+                session.blocks[i:i + 1] = retry  # khối xong thì bỏ; còn mục thiếu/hỏng thì thay bằng khối mới chỉ gồm các mục đó
+                if retry:
+                    msg += " Khối mới chỉ gồm các mục này đã thay vào chỗ khối cũ — copy và hỏi lại chat."
+                refresh()
+                status_var.set(msg)
+
+            def move(d):
+                if session.blocks:
+                    pos["i"] = (pos["i"] + d) % len(session.blocks)
+                    refresh()
+
+            def finish():
+                win.destroy()
+                stop_flag["stop"] = False
+                start_btn.config(state="disabled")
+                stop_btn.config(state="normal")
+
+                def run():
+                    try:
+                        session.finish(log=log, progress=progress, file_progress=file_progress,
+                                       should_stop=lambda: stop_flag["stop"])
+                    except Exception as e:  # noqa: BLE001
+                        log(f"LỖI: {e}")
+                    finally:
+                        root.after(0, lambda: (start_btn.config(state="normal"), stop_btn.config(state="disabled")))
+
+                threading.Thread(target=run, daemon=True).start()
+
+            ttk.Button(bar1, text="Copy khối này", command=copy_block).pack(side="left")
+            ttk.Button(bar1, text="◀ Trước", command=lambda: move(-1)).pack(side="left", padx=(12, 2))
+            ttk.Button(bar1, text="Sau ▶", command=lambda: move(1)).pack(side="left")
+            ttk.Button(bar2, text="Lưu kết quả của khối này", command=save_result).pack(side="left", padx=4)
+            ttk.Button(bar2, text="Tạo file xlsx / md từ bản dịch đã có", command=finish).pack(side="left", padx=4)
+            refresh()
+
+        threading.Thread(target=scan, daemon=True).start()
 
     def worker(src):
         try:

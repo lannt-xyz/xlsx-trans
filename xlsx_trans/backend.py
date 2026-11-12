@@ -17,6 +17,8 @@ def check(cfg):
 
 
 def _translate_raw(text, cfg):
+    if cfg.backend == "manual":
+        raise RuntimeError("chưa có bản dịch trong cache (chế độ thủ công: dịch bằng chat rồi nhập kết quả)")
     if cfg.backend == "llama_cpp":
         from . import llama_local
 

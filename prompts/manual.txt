@@ -1,0 +1,6 @@
+You will receive numbered items from a spreadsheet, after the line ITEMS:.
+Translate every item from Japanese to English following the rules above.
+Reply with exactly the same items in the same order, one per line, in the format `[n] translation`, using the same number n.
+Do not add, merge, skip or reorder items, and add no commentary or code fences.
+`<br>` marks a line break inside an item; keep it as `<br>`.
+Keep placeholders such as [[1]] unchanged.

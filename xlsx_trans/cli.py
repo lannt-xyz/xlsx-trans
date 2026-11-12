@@ -4,7 +4,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-from . import batch, dictionary, gui, pipeline
+from . import batch, dictionary, gui, manual, pipeline
 from .config import BACKENDS, load_config
 
 
@@ -45,6 +45,28 @@ def cli_review(cands, ask=input, out=print, interactive=None):
     return decision
 
 
+def run_manual(a, cfg, path):
+    try:
+        session = manual.ManualSession(cfg, path, out_dir=a.output, md_dir=a.md_out)
+        if a.manual_export:
+            blocks = session.scan()
+            n = manual.export_blocks(session, a.manual_export)
+            print(
+                f"Còn {sum(len(b.items) for b in blocks)}/{session.total} chuỗi cần dịch, chia thành {n} khối "
+                f"(đếm token: {session.counter.kind}) trong {a.manual_export}"
+            )
+            print("Dán từng block-NNN.txt vào chat, lưu kết quả vào block-NNN.out.txt, rồi chạy lại với --manual-import.")
+            return 0
+        saved, redo = manual.import_blocks(session, a.manual_import, print)
+        print(f"Đã nhập {saved} bản dịch" + (f"; {redo} mục cần dán lại (xem file *-retry*.txt)" if redo else "."))
+        if redo:
+            return 1
+        res = session.finish()
+        return 1 if getattr(res, "failed", None) else 0
+    except (OSError, ValueError) as e:
+        sys.exit(f"Lỗi: {e}")
+
+
 def build_parser():
     ap = argparse.ArgumentParser(
         prog="app.py",
@@ -72,6 +94,14 @@ def build_parser():
     ap.add_argument(
         "--dict-add", nargs=2, metavar=("NHÓM", "TỪ"),
         help="thêm TỪ vào nhóm NHÓM (vd. screen, item, person, message) trong file từ điển đầu tiên rồi thoát",
+    )
+    ap.add_argument(
+        "--manual-export", metavar="THƯ_MỤC",
+        help="dịch thủ công qua chat: ghi các khối block-NNN.txt (dán vào chat) rồi thoát",
+    )
+    ap.add_argument(
+        "--manual-import", metavar="THƯ_MỤC",
+        help="nhập kết quả chat (block-NNN.out.txt), rồi tạo file xlsx/md từ cache",
     )
     ap.add_argument("--no-suggest", action="store_true", help="không hỏi gợi ý thêm danh từ riêng vào từ điển")
     ap.add_argument("--dict-list", action="store_true", help="in nội dung từ điển rồi thoát")
@@ -136,6 +166,8 @@ def main(argv=None):
         return 0
 
     path = Path(a.input).expanduser()
+    if a.manual_export or a.manual_import:
+        return run_manual(a, cfg, path)
     try:
         if path.is_dir():
             res = batch.process_folder(path, cfg, out_dir=a.output, md_dir=a.md_out, dry_run=a.dry_run, review=cli_review)

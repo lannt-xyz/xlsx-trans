@@ -33,8 +33,16 @@ DEFAULT_SYSTEM_PROMPT = (
     "Keep line breaks as they are. If part of the text is already English, keep it."
 )
 DEFAULT_USER_TEMPLATE = "{text}"
+DEFAULT_MANUAL_INSTRUCTION = (
+    "You will receive numbered items from a spreadsheet, after the line ITEMS:. "
+    "Translate every item from Japanese to English following the rules above. "
+    "Reply with exactly the same items in the same order, one per line, in the format `[n] translation`, "
+    "using the same number n. Do not add, merge, skip or reorder items, and add no commentary or code fences. "
+    "`<br>` marks a line break inside an item; keep it as `<br>`. "
+    "Keep placeholders such as [[1]] unchanged."
+)
 
-BACKENDS = ("ollama", "llama_cpp")
+BACKENDS = ("ollama", "llama_cpp", "manual")
 
 DEFAULT_CONFIG = {
     "backend": {"type": "ollama"},
@@ -87,6 +95,12 @@ DEFAULT_CONFIG = {
         "ignore_file": "resources/dictionary.ignore.txt",
         "placeholder_note": PLACEHOLDER_NOTE,
     },
+    "manual": {
+        "tokenizer": "o200k_base",
+        "block_tokens": 6000,
+        "block_max_items": 300,
+        "instruction_file": "prompts/manual.txt",
+    },
     "batch": {
         "recursive": True,
         "continue_on_error": True,
@@ -112,7 +126,10 @@ class Config:
 
     def refresh(self):
         """Tính lại `model` và `options` theo backend đang chọn (gọi sau khi đổi backend/model/model_path)."""
-        if self.backend == "llama_cpp":
+        if self.backend == "manual":
+            self.model = "manual"
+            self.options = {}
+        elif self.backend == "llama_cpp":
             self.model = Path(str(self.model_path)).name
             self.options = dict(self.llama_options)
         else:
@@ -255,6 +272,18 @@ def load_config(path=None):
     if declared:  # đường dẫn do người dùng khai báo mà thiếu file thì báo; đường dẫn mặc định thì im lặng
         for m in c.dict_missing:
             c.warnings.append(f"Không đọc được file từ điển: {m}")
+
+    mn = data["manual"]
+    c.manual_tokenizer = str(mn["tokenizer"])
+    c.block_tokens = int(mn["block_tokens"])
+    c.block_max_items = int(mn["block_max_items"])
+    if c.block_tokens < 200 or c.block_max_items < 1:
+        raise ValueError("manual.block_tokens phải >= 200 và manual.block_max_items >= 1.")
+    set_manual = user_data.get("manual", {})
+    c.manual_instruction = read_text_setting(
+        mn.get("instruction_file"), base_dir, DEFAULT_MANUAL_INSTRUCTION, c.warnings, "manual.instruction_file",
+        warn="instruction_file" in set_manual,
+    )
 
     b = data["batch"]
     c.recursive = bool(b["recursive"])
