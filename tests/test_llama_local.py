@@ -62,6 +62,13 @@ class TestNativeCrash(LlamaCase):
                 pipeline.process_xlsx(src, self.dir / "out.xlsx", self.cfg, log=lambda *_: None)
         self.assertEqual(m.call_count, 1)
 
+    def test_load_failure_is_fatal_and_reported_once(self):
+        with mock.patch.object(llama_local, "_import_llama", side_effect=OSError("exception: access violation reading 0x0")):
+            with self.assertRaises(llama_local.NativeCrash) as cm:
+                llama_local.translate_text("x", self.cfg)
+        self.assertIn("Không nạp được model", str(cm.exception))
+        self.assertIn("n_gpu_layers=", str(cm.exception))
+
     def test_ordinary_errors_still_retry(self):
         llama_local.translate_text("warm", self.cfg)
         FakeLlama.instances[0].reply = RuntimeError("other")

@@ -4,6 +4,8 @@ Cài (tùy chọn):  pip install llama-cpp-python
 Model được nạp một lần rồi dùng lại cho mọi đoạn / mọi file trong cùng lần chạy.
 """
 import importlib.util
+import os
+import platform
 import sys
 import threading
 import time
@@ -37,8 +39,11 @@ def _diagnostics(cfg, params):
         ver = getattr(llama_cpp, "__version__", "?")
     except Exception:  # noqa: BLE001
         ver = "?"
-    return (f"python={sys.executable}; llama-cpp-python={ver}; n_ctx={cfg.n_ctx}; n_threads={cfg.n_threads}; "
-            f"n_gpu_layers={cfg.n_gpu_layers}; params={params}; luồng={threading.current_thread().name}")
+    mp = Path(str(cfg.model_path))
+    size = f"{mp.stat().st_size / 2**30:.2f}GB" if mp.is_file() else "KHÔNG TỒN TẠI"
+    return (f"python={sys.executable} ({platform.python_version()}, {platform.machine()}); llama-cpp-python={ver}; "
+            f"model={mp} ({size}); n_ctx={cfg.n_ctx}; n_threads={cfg.n_threads}; n_gpu_layers={cfg.n_gpu_layers}; "
+            f"params={params}; cwd={os.getcwd()}; luồng={threading.current_thread().name}")
 
 
 def _import_llama():
@@ -70,11 +75,14 @@ def _get_llm(cfg):
 
 
 def translate_text(text, cfg):
-    llm = _get_llm(cfg)  # lỗi nạp model ném ra ngay, không thử lại
     params = {}
     for k, v in cfg.options.items():
         if k in _OPTION_MAP:
             params[_OPTION_MAP[k]] = v
+    try:
+        llm = _get_llm(cfg)
+    except Exception as e:  # noqa: BLE001  (nạp model hỏng thì mọi đoạn sau cũng hỏng: dừng cả lượt)
+        raise NativeCrash(f"Không nạp được model llama.cpp ({e}). Thông tin để chẩn đoán: {_diagnostics(cfg, params)}") from e
     last_err = None
     for _ in range(cfg.retries + 1):
         try:
