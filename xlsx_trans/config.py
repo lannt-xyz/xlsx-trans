@@ -155,6 +155,79 @@ def deep_merge(base, extra):
             base[k] = v
 
 
+def _resolve(rel, base_dir):
+    """Đường dẫn tuyệt đối của một file khai báo trong config (None nếu bỏ trống)."""
+    if not rel:
+        return None
+    p = Path(str(rel)).expanduser()
+    return p if p.is_absolute() else base_dir / p
+
+
+_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _toml_value(v):
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return repr(v)
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(_toml_value(x) for x in v) + "]"
+    return json.dumps(str(v), ensure_ascii=False)  # chuỗi JSON cũng là chuỗi TOML hợp lệ
+
+
+def _toml_key(k):
+    return k if _BARE_KEY.match(k) else json.dumps(k, ensure_ascii=False)
+
+
+def dump_toml(data, _prefix=()):
+    """Ghi dict lồng nhau (str/int/float/bool/list/dict) ra TOML. Không giữ comment."""
+    scalars = {k: v for k, v in data.items() if not isinstance(v, dict)}
+    tables = {k: v for k, v in data.items() if isinstance(v, dict)}
+    lines = []
+    if _prefix and (scalars or not tables):
+        lines.append("[" + ".".join(_toml_key(k) for k in _prefix) + "]")
+    lines += [f"{_toml_key(k)} = {_toml_value(v)}" for k, v in scalars.items()]
+    out = "\n".join(lines)
+    for k, v in tables.items():
+        sub = dump_toml(v, _prefix + (k,))
+        if sub:
+            out += ("\n\n" if out else "") + sub
+    return out + ("\n" if not _prefix else "")
+
+
+def _apply_updates(base, updates):
+    """Như deep_merge nhưng giá trị None nghĩa là xóa khóa đó khỏi `base`."""
+    for k, v in updates.items():
+        if v is None:
+            base.pop(k, None)
+        elif isinstance(v, dict):
+            node = base.setdefault(k, {})
+            if not isinstance(node, dict):
+                node = base[k] = {}
+            _apply_updates(node, v)
+            if not node:
+                base.pop(k, None)
+        else:
+            base[k] = v
+
+
+def save_overrides(updates, path):
+    """Gộp `updates` (dict lồng nhau theo cấu trúc config.toml) vào file cấu hình riêng (mặc định config.local.toml).
+
+    Giữ các mục khác đã có trong file, nhưng comment trong file đó sẽ mất. Trả về đường dẫn đã ghi.
+    """
+    path = Path(path)
+    existing = {}
+    if path.is_file():
+        with open(path, "rb") as fh:
+            existing = tomllib.load(fh)
+    _apply_updates(existing, updates)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dump_toml(existing), encoding="utf-8")
+    return path
+
+
 def read_text_setting(rel, base_dir, default, warnings, label, warn=True):
     if not rel:
         return default
@@ -214,8 +287,12 @@ def load_config(path=None):
     c.retries = int(o["retries"])
     c.ollama_options = dict(o.get("options") or {})
 
+    c.local_config_path = Path(path).expanduser() if path else APP_DIR / "config.local.toml"
+
     pr = data["prompt"]
     set_by_user = user_data.get("prompt", {})
+    c.system_file = _resolve(pr.get("system_file"), base_dir)
+    c.user_file = _resolve(pr.get("user_file"), base_dir)
     c.system_prompt = read_text_setting(
         pr.get("system_file"), base_dir, DEFAULT_SYSTEM_PROMPT, c.warnings, "prompt.system_file",
         warn="system_file" in set_by_user,
@@ -280,6 +357,7 @@ def load_config(path=None):
     if c.block_tokens < 200 or c.block_max_items < 1:
         raise ValueError("manual.block_tokens phải >= 200 và manual.block_max_items >= 1.")
     set_manual = user_data.get("manual", {})
+    c.manual_file = _resolve(mn.get("instruction_file"), base_dir)
     c.manual_instruction = read_text_setting(
         mn.get("instruction_file"), base_dir, DEFAULT_MANUAL_INSTRUCTION, c.warnings, "manual.instruction_file",
         warn="instruction_file" in set_manual,

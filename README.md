@@ -328,3 +328,14 @@ python -m unittest discover -v
 ## Giấy phép
 
 Apache License 2.0, xem file [LICENSE](LICENSE).
+
+## Giao diện (GUI) mới
+
+Màn hình chính chỉ giữ những thứ dùng mỗi lần: chọn file/folder (có xem trước kế hoạch), chế độ thay/song ngữ, Markdown, gợi ý từ điển, trạng thái model, tiến độ + thời gian còn lại, nhật ký tô màu.
+Mọi tùy chọn khác nằm trong **⚙ Cài đặt** (`Ctrl+,`) chia theo tab: Mô hình, Dịch, Đối tượng, Output, Từ điển, Chat thủ công, Prompt…
+
+- **Áp dụng**: chỉ cho phiên hiện tại. **Lưu**: ghi các mục đã đổi vào `config.local.toml` (đè lên `config.toml`; lưu ý comment trong file riêng này không được giữ) và các file prompt.
+- Phím tắt: `Ctrl+O` chọn file, `Ctrl+Shift+O` chọn folder, `Ctrl+Enter` bắt đầu, `Esc` dừng.
+- Nút ☾/☀ đổi theme sáng/tối; cỡ cửa sổ, theme, thư mục gần nhất nhớ trong `.ui_state.json`.
+- Cài thêm `sv-ttk` (tùy chọn) để có giao diện hiện đại hơn; không có thì dùng theme dự phòng.
+- Test giao diện cần màn hình ảo: `xvfb-run python -m unittest discover -s tests -t .`

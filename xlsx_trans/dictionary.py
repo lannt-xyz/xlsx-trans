@@ -173,3 +173,33 @@ def add_term(path, category, term):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return True
+
+
+def split_header(text):
+    """Phần đầu file gồm dòng trống / ghi chú (#) trước từ hoặc nhóm đầu tiên — giữ nguyên khi ghi lại."""
+    head = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line and not line.startswith("#"):
+            break
+        head.append(raw.rstrip())
+    while head and not head[-1].strip():
+        head.pop()
+    return "\n".join(head)
+
+
+def write_entries(path, entries):
+    """Ghi lại toàn bộ file từ điển từ {nhóm: [từ]}, giữ phần ghi chú đầu file. Ghi chú xen giữa các từ sẽ mất."""
+    path = Path(path)
+    header = ""
+    if path.exists():
+        header = split_header(path.read_text(encoding="utf-8-sig"))
+    lines = [header, ""] if header else []
+    for cat, terms in entries.items():
+        if not terms:
+            continue
+        lines.append(f"[{cat}]")
+        lines += terms
+        lines.append("")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
