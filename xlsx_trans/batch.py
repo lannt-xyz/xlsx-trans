@@ -12,7 +12,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import backend, pipeline
+from . import backend, llama_local, pipeline
 from . import suggest as suggestions
 from .cache import TranslationCache
 
@@ -183,6 +183,11 @@ def process_folder(
                 job.src, job.out, cfg, log=indent, progress=progress, should_stop=should_stop,
                 md_path=job.md, cache=cache, log_header=False,
             )
+        except llama_local.NativeCrash as e:
+            result.failed.append((job.rel, str(e)))
+            log(f"    LỖI: {e}")
+            log("Dừng cả lượt vì llama.cpp bị crash (các file sau sẽ lỗi y hệt).")
+            break
         except Exception as e:  # noqa: BLE001
             result.failed.append((job.rel, str(e)))
             log(f"    LỖI: {e}")

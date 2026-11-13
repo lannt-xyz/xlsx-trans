@@ -238,3 +238,4 @@ resources/tiktoken/
 # GUI
 .ui_state.json
 config.local.toml
+history.jsonl

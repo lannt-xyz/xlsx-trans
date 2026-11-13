@@ -116,6 +116,13 @@ block_max_items = 300
 # Chỉ dẫn gửi kèm đầu mỗi khối (sau system prompt). Sửa file này để hợp với chat của bạn.
 instruction_file = "prompts/manual.txt"
 
+[history]
+# Ghi lịch sử mỗi lượt dịch (mỗi file một dòng): model, token vào/ra, tok/s, thời gian, kết quả.
+# Chỉ lưu số liệu trên máy, KHÔNG lưu nội dung file. Xem bằng nút "Lịch sử…" hoặc `python app.py --history`.
+enabled = true
+file = "history.jsonl"
+max_entries = 2000
+
 [batch]
 recursive = true           # quét cả thư mục con
 continue_on_error = true   # một file lỗi (hỏng, bị khóa...) thì ghi nhận rồi dịch tiếp các file còn lại

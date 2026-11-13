@@ -74,6 +74,9 @@ FIELDS = [
     _f("recursive", "Đầu ra", "Dịch cả thư mục con khi chọn folder", "bool", ("batch", "recursive"), "recursive", group="Folder"),
     _f("cont", "Đầu ra", "File lỗi thì bỏ qua và dịch tiếp file khác", "bool", ("batch", "continue_on_error"),
        "continue_on_error", group="Folder"),
+    _f("h_on", "Đầu ra", "Ghi lịch sử dịch (model, token, tok/s)", "bool", ("history", "enabled"), "history_enabled",
+       help="Chỉ lưu số liệu, không lưu nội dung file.", group="Lịch sử"),
+    _f("h_max", "Đầu ra", "Số dòng lịch sử tối đa", "int", ("history", "max_entries"), "history_max", minimum=10, group="Lịch sử"),
 
     _f("d_on", "Từ điển", "Dùng từ điển giữ nguyên tiếng Nhật", "bool", ("dictionary", "enabled"), "dict_enabled", group="Từ điển"),
     _f("d_suggest", "Từ điển", "Gợi ý danh từ riêng chưa có trong từ điển khi dịch", "bool", ("dictionary", "suggest"),

@@ -339,3 +339,10 @@ Mọi tùy chọn khác nằm trong **⚙ Cài đặt** (`Ctrl+,`) chia theo tab
 - Nút ☾/☀ đổi theme sáng/tối; cỡ cửa sổ, theme, thư mục gần nhất nhớ trong `.ui_state.json`.
 - Cài thêm `sv-ttk` (tùy chọn) để có giao diện hiện đại hơn; không có thì dùng theme dự phòng.
 - Test giao diện cần màn hình ảo: `xvfb-run python -m unittest discover -s tests -t .`
+
+## Lịch sử dịch
+
+Mỗi file dịch xong ghi một dòng vào `history.jsonl` (chỉ số liệu, không có nội dung file): thời gian, file, backend, model, token vào/ra, tok/s, thời gian chạy, số đoạn dịch, số lỗi, kết quả.
+Xem bằng nút **Lịch sử…** (có xuất CSV) hoặc `python app.py --history [N]`. Tắt/bật và giới hạn số dòng ở mục `[history]` trong `config.toml`.
+Ollama báo token và thời gian sinh chính xác; llama.cpp tính tok/s gồm cả thời gian đọc prompt; chế độ chat thủ công chỉ ước lượng token (dấu `~`).
+Khi llama.cpp bị crash native (`access violation`), app dừng cả lượt dịch và in thông tin chẩn đoán (Python, phiên bản thư viện, tham số).

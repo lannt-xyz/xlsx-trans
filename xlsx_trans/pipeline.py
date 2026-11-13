@@ -1,9 +1,11 @@
 """Dịch MỘT file xlsx/xlsm: gom đoạn cần dịch -> dịch (có cache) -> ghi file mới (+ Markdown)."""
+import time
 import zipfile
 from pathlib import Path
 
 from . import markdown as md_export
 from . import backend as llm
+from . import history, llama_local, metrics
 from .cache import TranslationCache
 from . import suggest as suggestions
 from . import tables as table_fix
@@ -26,7 +28,7 @@ def default_out(in_path, cfg):
     return str(p.with_name(f"{p.stem}{cfg.suffix}{p.suffix}"))
 
 
-def process_xlsx(
+def _process_xlsx(
     in_path,
     out_path,
     cfg,
@@ -89,6 +91,9 @@ def process_xlsx(
                 break
             try:
                 cache[text] = llm.translate_text(text, cfg)
+            except llama_local.NativeCrash:
+                cache.save()
+                raise  # dừng cả lượt, không thử tiếp hàng trăm đoạn
             except Exception as e:  # noqa: BLE001
                 errors += 1
                 log(f"Lỗi với đoạn «{text[:30]}…»: {e}")
@@ -97,6 +102,8 @@ def process_xlsx(
                 log(f"  {i}/{total}")
                 cache.save()
         cache.save()
+        if cfg.backend == "manual":  # không gọi model ở đây: ước lượng token của các cặp gốc/dịch trong file này
+            metrics.estimate([(t, cache.get(t)) for t in unique if cache.get(t)], cfg.manual_tokenizer)
 
         # Áp bản dịch vào XML
         applied = 0
@@ -140,3 +147,29 @@ def process_xlsx(
         except Exception as e:  # noqa: BLE001
             log(f"Không xuất được Markdown: {e}")
     return applied, errors
+
+
+def process_xlsx(in_path, out_path, cfg, *args, **kwargs):
+    """Dịch một file (xem _process_xlsx) và ghi một dòng vào lịch sử với model, token vào/ra và tốc độ."""
+    should_stop = kwargs.get("should_stop") or (lambda: False)
+    usage, t0, status, result = metrics.start(), time.time(), "done", (0, 0)
+    try:
+        result = _process_xlsx(in_path, out_path, cfg, *args, **kwargs)
+        if should_stop():
+            status = "stopped"
+        elif result[1]:
+            status = "partial"
+        return result
+    except BaseException:
+        status = "error"
+        raise
+    finally:
+        metrics.stop()
+        history.record(cfg, {
+            "source": str(in_path), "backend": cfg.backend, "model": cfg.model, "mode": cfg.mode,
+            "segments": result[0], "errors": result[1], "status": status,
+            "prompt_tokens": usage.prompt_tokens, "completion_tokens": usage.completion_tokens,
+            "tps": round(usage.tps, 2) if usage.tps else None, "calls": usage.calls,
+            "seconds": round(time.time() - t0, 1), "exact": usage.exact,
+        })
+

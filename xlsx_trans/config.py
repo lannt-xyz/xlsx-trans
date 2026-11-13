@@ -101,6 +101,11 @@ DEFAULT_CONFIG = {
         "block_max_items": 300,
         "instruction_file": "prompts/manual.txt",
     },
+    "history": {
+        "enabled": True,
+        "file": "history.jsonl",
+        "max_entries": 2000,
+    },
     "batch": {
         "recursive": True,
         "continue_on_error": True,
@@ -362,6 +367,11 @@ def load_config(path=None):
         mn.get("instruction_file"), base_dir, DEFAULT_MANUAL_INSTRUCTION, c.warnings, "manual.instruction_file",
         warn="instruction_file" in set_manual,
     )
+
+    h = data["history"]
+    c.history_enabled = bool(h["enabled"])
+    c.history_file = _resolve(h["file"], base_dir) or APP_DIR / "history.jsonl"
+    c.history_max = int(h["max_entries"])
 
     b = data["batch"]
     c.recursive = bool(b["recursive"])

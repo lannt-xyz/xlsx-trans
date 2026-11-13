@@ -41,6 +41,35 @@ class LlamaCase(unittest.TestCase):
         self.cfg.refresh()
 
 
+class TestNativeCrash(LlamaCase):
+    def crash(self):
+        _ = FakeLlama  # mô phỏng ctypes: OSError "exception: access violation reading 0x0..."
+        return OSError("exception: access violation reading 0x0000000000000000")
+
+    def test_access_violation_raises_native_crash_without_retry(self):
+        llama_local.translate_text("warm", self.cfg)
+        FakeLlama.instances[0].reply = self.crash()
+        with self.assertRaises(llama_local.NativeCrash) as cm:
+            llama_local.translate_text("x", self.cfg)
+        self.assertIn("n_ctx=", str(cm.exception))
+        self.assertEqual(len(FakeLlama.instances[0].calls), 2)  # 1 warm + 1 lần lỗi, không retry
+
+    def test_pipeline_aborts_run_on_native_crash(self):
+        src = fx.build_fixture(self.dir / "in.xlsx")
+        with mock.patch.object(backend, "check"), \
+                mock.patch.object(backend, "translate_text", side_effect=llama_local.NativeCrash("boom")) as m:
+            with self.assertRaises(llama_local.NativeCrash):
+                pipeline.process_xlsx(src, self.dir / "out.xlsx", self.cfg, log=lambda *_: None)
+        self.assertEqual(m.call_count, 1)
+
+    def test_ordinary_errors_still_retry(self):
+        llama_local.translate_text("warm", self.cfg)
+        FakeLlama.instances[0].reply = RuntimeError("other")
+        with self.assertRaises(RuntimeError):
+            llama_local.translate_text("x", self.cfg)
+        self.assertEqual(len(FakeLlama.instances[0].calls), 1 + self.cfg.retries + 1)
+
+
 class TestLlamaTranslate(LlamaCase):
     def test_model_and_options_come_from_llama_section(self):
         self.assertEqual(self.cfg.model, "m.gguf")

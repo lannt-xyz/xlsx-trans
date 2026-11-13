@@ -4,8 +4,12 @@ Cài (tùy chọn):  pip install llama-cpp-python
 Model được nạp một lần rồi dùng lại cho mọi đoạn / mọi file trong cùng lần chạy.
 """
 import importlib.util
+import sys
+import threading
+import time
 from pathlib import Path
 
+from . import metrics
 from .ollama import build_messages
 
 _loaded = {"key": None, "llm": None}
@@ -20,6 +24,21 @@ _OPTION_MAP = {
     "num_predict": "max_tokens",
     "max_tokens": "max_tokens",
 }
+
+
+class NativeCrash(RuntimeError):
+    """Thư viện llama.cpp (tầng C++) bị crash: các đoạn sau sẽ lỗi y hệt nên phải dừng cả lượt dịch."""
+
+
+def _diagnostics(cfg, params):
+    try:
+        import llama_cpp  # noqa: PLC0415
+
+        ver = getattr(llama_cpp, "__version__", "?")
+    except Exception:  # noqa: BLE001
+        ver = "?"
+    return (f"python={sys.executable}; llama-cpp-python={ver}; n_ctx={cfg.n_ctx}; n_threads={cfg.n_threads}; "
+            f"n_gpu_layers={cfg.n_gpu_layers}; params={params}; luồng={threading.current_thread().name}")
 
 
 def _import_llama():
@@ -59,10 +78,15 @@ def translate_text(text, cfg):
     last_err = None
     for _ in range(cfg.retries + 1):
         try:
+            t0 = time.perf_counter()
             res = llm.create_chat_completion(messages=build_messages(text, cfg), **params)
+            usage = res.get("usage") or {}
+            metrics.add(usage.get("prompt_tokens"), usage.get("completion_tokens"), time.perf_counter() - t0)
             out = res["choices"][0]["message"]["content"].strip()
             if out:
                 return out
         except Exception as e:  # noqa: BLE001
             last_err = e
+            if "access violation" in str(e).lower():  # lỗi native, thử lại cũng vô ích
+                raise NativeCrash(f"llama.cpp bị crash ({e}). Thông tin để chẩn đoán: {_diagnostics(cfg, params)}") from e
     raise RuntimeError(f"llama.cpp lỗi: {last_err}")

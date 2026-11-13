@@ -12,6 +12,7 @@ from ..ollama import list_models
 from . import theme
 from .bus import UiBus
 from .dict_dialog import DictionaryDialog, ReviewDialog
+from .history_dialog import HistoryDialog
 from .manual_dialog import ManualDialog
 from .settings_dialog import SettingsDialog
 from .state import UiState
@@ -142,14 +143,15 @@ class App:
         # 3. Hành động
         act = ttk.Frame(body)
         act.grid(row=2, column=0, sticky="ew", pady=(0, 10))
-        act.columnconfigure(3, weight=1)
         self.start_btn = ttk.Button(act, text="▶  Bắt đầu dịch", style="Big.Accent.TButton", command=self.start)
         self.start_btn.grid(row=0, column=0)
         self.manual_btn = ttk.Button(act, text="Dịch thủ công (chat)…", command=self.open_manual)
         self.manual_btn.grid(row=0, column=1, padx=(10, 0))
         ttk.Button(act, text="Từ điển…", command=self.open_dictionary).grid(row=0, column=2, padx=(10, 0))
+        ttk.Button(act, text="Lịch sử…", command=lambda: HistoryDialog(self)).grid(row=0, column=3, padx=(10, 0))
+        act.columnconfigure(4, weight=1)
         self.stop_btn = ttk.Button(act, text="■  Dừng", state="disabled", command=self.stop)
-        self.stop_btn.grid(row=0, column=4)
+        self.stop_btn.grid(row=0, column=5)
 
         # 4. Tiến độ
         prog = Card(body, "3  Tiến độ")

@@ -4,7 +4,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-from . import batch, dictionary, gui, manual, pipeline, tokens
+from . import batch, dictionary, gui, history, manual, pipeline, tokens
 from .config import BACKENDS, load_config
 
 
@@ -90,6 +90,8 @@ def build_parser():
     ap.add_argument("--host", help="ghi đè ollama.host")
     ap.add_argument("--mode", choices=["replace", "bilingual"], help="ghi đè translate.mode")
     ap.add_argument("--dict", action="append", metavar="FILE", help="thêm file từ điển giữ nguyên tiếng Nhật (dùng được nhiều lần)")
+    ap.add_argument("--history", nargs="?", type=int, const=20, metavar="N",
+                    help="in N lượt dịch gần nhất (mặc định 20) kèm model, token vào/ra, tok/s rồi thoát")
     ap.add_argument("--no-dict", action="store_true", help="không dùng từ điển")
     ap.add_argument(
         "--dict-add", nargs=2, metavar=("NHÓM", "TỪ"),
@@ -113,6 +115,25 @@ def build_parser():
     ap.add_argument("--no-recursive", action="store_true", help="đầu vào là folder: chỉ xử lý file ở cấp trên cùng")
     ap.add_argument("--dry-run", action="store_true", help="chỉ in file nào sẽ được tạo ở đâu, không dịch/ghi gì")
     return ap
+
+
+def print_history(cfg, n):
+    entries = history.load(cfg.history_file, limit=max(n, 1))
+    if not entries:
+        print(f"Chưa có lịch sử ({cfg.history_file}).")
+        return 0
+    print(f"{'Thời gian':19}  {'Model':28}  {'Tok vào':>8}  {'Tok ra':>8}  {'tok/s':>6}  {'Thời gian':>9}  {'Trạng thái':10}  File")
+    for e in entries:
+        mark = "~" if not e.get("exact", True) else " "
+        print(f"{e.get('time', '')[:19]:19}  {str(e.get('model', ''))[:28]:28}  {e.get('prompt_tokens', 0):>7}{mark}  "
+              f"{e.get('completion_tokens', 0):>7}{mark}  {history.fmt_tps(e.get('tps')):>6}  "
+              f"{history.fmt_seconds(e.get('seconds')):>9}  {e.get('status', ''):10}  {Path(str(e.get('source', ''))).name}")
+    s = history.summarize(entries)
+    print(f"Tổng {s['runs']} lượt · {s['prompt_tokens']} token vào · {s['completion_tokens']} token ra · "
+          f"tốc độ TB {history.fmt_tps(s['tps'])} tok/s · {history.fmt_seconds(s['seconds'])}")
+    if any(not e.get("exact", True) for e in entries):
+        print("(~ = token ước lượng, chế độ thủ công không có số liệu chính xác từ model)")
+    return 0
 
 
 def main(argv=None):
@@ -168,6 +189,9 @@ def main(argv=None):
             for t in terms:
                 print(f"  {t}")
         return 0
+
+    if a.history is not None:
+        return print_history(cfg, a.history)
 
     if not a.input:
         gui.run_gui(cfg)
