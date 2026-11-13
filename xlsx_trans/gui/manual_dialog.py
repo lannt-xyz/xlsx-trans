@@ -9,6 +9,9 @@ class ManualDialog:
     def __init__(self, app, session: ManualSession):
         self.app, self.session = app, session
         self.pos = 0
+        self.texts = {}  # id(block) -> văn bản kết quả đã dán
+        self.sizes = {}  # số mục ban đầu của khối (apply_output bỏ dần mục đã lưu)
+        self.state = {}  # id(block) -> 'done' | 'partial'
         win = self.win = tk.Toplevel(app.root)
         win.title("Dịch thủ công qua chat")
         win.geometry("820x700")
@@ -59,9 +62,11 @@ class ManualDialog:
             box.delete("1.0", "end")
         self.result_box.delete("1.0", "end")
         if b:
-            self.head.set(f"Khối {self.pos + 1}/{n} · {len(b.items)} mục · {b.tokens} token ({s.counter.kind}) · "
-                          f"đã có {done}/{s.total} bản dịch")
+            mark = {"done": "  ✔ ĐÃ LƯU", "partial": "  ⚠ lưu một phần (xem khối mới)"}.get(self.state.get(id(b)), "")
+            self.head.set(f"Khối {self.pos + 1}/{n} · {self.sizes.get(id(b), len(b.items))} mục · {b.tokens} token ({s.counter.kind}) · "
+                          f"đã có {done}/{s.total} bản dịch{mark}")
             self.prompt_box.insert("1.0", b.prompt)
+            self.result_box.insert("1.0", self.texts.get(id(b), ""))
         else:
             self.head.set(f"Hết khối cần dịch · đã có {done}/{s.total} bản dịch — bấm “Tạo file”.")
         self.prompt_box.configure(state="disabled")
@@ -86,6 +91,7 @@ class ManualDialog:
         if not text.strip():
             self.status.set("Ô kết quả đang trống.")
             return
+        self.sizes.setdefault(id(b), len(b.items))
         res = self.session.apply_output(b, text)
         msg = f"Đã lưu {len(res.saved)} bản dịch."
         if res.suspect:
@@ -97,11 +103,25 @@ class ManualDialog:
             msg += f" Thiếu mục {res.missing}."
         if res.bad:
             msg += " Lỗi: " + "; ".join(f"{i} ({why})" for i, why in res.bad) + "."
-        self.session.blocks[self.pos:self.pos + 1] = retry  # khối xong thì bỏ; còn mục thiếu/hỏng thì thay bằng khối mới
+        # giữ nguyên khối đã lưu (để ◀ ▶ xem lại); mục thiếu/hỏng thành khối mới chèn ngay sau
+        self.texts[id(b)] = text
+        self.state[id(b)] = "partial" if retry else "done"
+        self.session.blocks[self.pos + 1:self.pos + 1] = retry
         if retry:
-            msg += " Khối mới chỉ gồm các mục này đã thay vào chỗ khối cũ — copy và hỏi lại chat."
+            msg += " Đã tạo khối mới chỉ gồm các mục này ngay sau — copy và hỏi lại chat."
+        self.pos = self._next_pending(self.pos)
         self.refresh()
-        self.status.set(msg)
+        if all(id(x) in self.state for x in self.session.blocks):
+            msg += " Đã hết khối — bấm “Tạo file xlsx / md”."
+        self.status.set("✔ " + msg)
+
+    def _next_pending(self, start):
+        bl = self.session.blocks
+        for k in range(1, len(bl) + 1):
+            i = (start + k) % len(bl)
+            if id(bl[i]) not in self.state:
+                return i
+        return start
 
     def finish(self):
         self.win.destroy()
