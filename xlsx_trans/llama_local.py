@@ -159,7 +159,7 @@ def translate_text(text, cfg):
             t0 = time.perf_counter()
             res = llm.create_chat_completion(messages=build_messages(text, cfg), **params)
             usage = res.get("usage") or {}
-            metrics.add(usage.get("prompt_tokens"), usage.get("completion_tokens"), time.perf_counter() - t0)
+            metrics.add(usage.get("prompt_tokens"), usage.get("completion_tokens"), time.perf_counter() - t0, approx_time=True)
             out = res["choices"][0]["message"]["content"].strip()
             if out:
                 return out

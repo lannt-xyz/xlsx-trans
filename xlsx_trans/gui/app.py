@@ -7,7 +7,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from .. import __version__, batch, manual, pipeline
+from .. import __version__, batch, manual, metrics, pipeline
 from ..ollama import list_models
 from . import clipboard, theme
 from .bus import UiBus
@@ -426,6 +426,11 @@ class App:
             done, total = a
             self.pbar_file.configure(maximum=max(total, 1), value=done)
             self.unit_fraction = done / total if total else 1.0
+            live = metrics.live()
+            if live:
+                tps, out_tok, approx = live
+                self.status_var.set(f"⚡ {'~' if approx else ''}{tps:.1f} tok/s · {out_tok:,} token ra · đoạn {done}/{total}"
+                                    if tps else f"{out_tok:,} token ra · đoạn {done}/{total}")
             self.file_text.set(f"{int(self.unit_fraction * 100)}%")
             if self.files[1] == 1:  # một file: thanh tổng chạy theo thanh file
                 self.pbar_total.configure(maximum=max(total, 1), value=done)

@@ -229,7 +229,7 @@ Giao diện có nút **Từ điển…** để sửa trực tiếp file.
 Cách từ điển áp dụng khi dịch:
 
 - Ô chỉ gồm từ trong danh sách (cả khi kèm số, dấu câu) → giữ nguyên, **không gọi model**. Áp dụng cả cho tiêu đề Table (ô và tên cột vẫn khớp nhau) và tên sheet trong Markdown.
-- Từ nằm trong câu dài hơn → được thay bằng ký hiệu `[[1]]`, `[[2]]`… trước khi gửi cho model rồi khôi phục đúng chữ gốc sau khi dịch. Nếu model làm mất ký hiệu, app thử lại một lần; vẫn mất thì đoạn đó giữ nguyên bản gốc và tính là một lỗi trong log. Model nhỏ đôi khi làm mất ký hiệu, nên hãy kiểm tra log.
+- Từ nằm trong câu dài hơn → được thay bằng ký hiệu `[[1]]`, `[[2]]`… trước khi gửi cho model rồi khôi phục đúng chữ gốc sau khi dịch. Nếu model làm mất ký hiệu, app thử lại với nhiệt độ cao hơn (0.4); vẫn mất thì dịch đoạn đó không dùng ký hiệu (dặn model giữ nguyên các từ rồi kiểm tra từ nào cũng còn); vẫn không được thì đoạn giữ nguyên bản gốc, tính là một lỗi và log ghi kèm nội dung model đã trả về. Model nhỏ đôi khi làm mất ký hiệu, nên hãy kiểm tra log.
 - Từ dài được khớp trước (「ログイン画面」 trước 「ログイン」); phân biệt hoa thường; khớp theo chuỗi con, nên từ ngắn như 「会」 sẽ khớp cả trong 「会社」.
 - Sửa từ điển thì cache bản dịch cũ tự không dùng lại. Trong Docker, thư mục `resources/` được mount vào container.
 - Thay đổi chỉ dẫn gửi cho model về ký hiệu bằng `[dictionary] placeholder_note` trong `config.toml`.
