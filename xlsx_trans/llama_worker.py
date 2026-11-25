@@ -2,11 +2,16 @@
 
 Chạy tách riêng để: (1) lỗi native của llama.cpp (access violation...) không làm hỏng tiến trình giao diện,
 (2) model chạy trong một tiến trình "sạch", không lẫn với Tk / lxml / các thư viện khác của app.
-Không import gì của xlsx_trans ngoài file này.
+Chạy trực tiếp như một script (python llama_worker.py); không import gì của xlsx_trans.
 """
-import json
 import os
 import sys
+
+# Bỏ thư mục chứa file này khỏi sys.path để các module cùng thư mục (markdown.py, cache.py...) không che thư viện chuẩn.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:] = [p for p in sys.path if os.path.abspath(p or os.getcwd()) != _HERE]
+
+import json  # noqa: E402
 
 
 def main():

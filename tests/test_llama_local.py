@@ -119,6 +119,13 @@ class TestIsolatedWorker(unittest.TestCase):
             llama_local.translate_text("x", self.cfg)
         self.assertIn("Không nạp được model", str(cm.exception))
 
+    def test_missing_worker_file_gives_a_clear_message(self):
+        with mock.patch.object(llama_local, "__file__", str(self.dir / "llama_local.py")):
+            with self.assertRaises(llama_local.NativeCrash) as cm:
+                llama_local.translate_text("x", self.cfg)
+        self.assertIn("llama_worker.py", str(cm.exception))
+        self.assertIn("git pull", str(cm.exception))
+
     def test_changing_model_restarts_child(self):
         llama_local.translate_text("a", self.cfg)
         first = llama_local._loaded["llm"]

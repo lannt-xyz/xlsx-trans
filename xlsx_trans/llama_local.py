@@ -54,11 +54,13 @@ class _Remote:
     """Giao diện giống Llama nhưng model nằm ở tiến trình con (llama_worker). Tiến trình con chết = NativeCrash."""
 
     def __init__(self, kwargs):
-        root = Path(__file__).resolve().parent.parent  # chạy `-m` từ thư mục gốc để không bị module trong xlsx_trans che stdlib
+        worker = Path(__file__).resolve().with_name("llama_worker.py")
+        if not worker.is_file():
+            raise NativeCrash(f"Thiếu file {worker} (cập nhật code chưa đủ: hãy git pull lại hoặc đặt llama_cpp.isolate = false).")
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
         self.tail = collections.deque(maxlen=30)
         self.proc = subprocess.Popen(
-            [sys.executable, "-m", "xlsx_trans.llama_worker"], cwd=str(root), stdin=subprocess.PIPE,
+            [sys.executable, str(worker)], cwd=str(worker.parent.parent), stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
             bufsize=1, creationflags=flags)
         threading.Thread(target=self._drain, daemon=True).start()
