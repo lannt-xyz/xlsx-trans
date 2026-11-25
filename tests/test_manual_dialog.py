@@ -79,13 +79,44 @@ class TestManualDialog(SessionCase):
     def test_ctrl_v_with_focus_elsewhere_goes_to_result_box(self):
         dlg, s = self.open()
         self.put("[1] X")
-        dlg.prompt_box.focus_force()
-        self.app.root.update()
         self.assertEqual(dlg._ctrl_v(None), "break")
         self.assertEqual(self.result(), "[1] X")
-        dlg.result_box.focus_force()
-        self.app.root.update()
-        self.assertIsNone(dlg._ctrl_v(None))  # ô kết quả tự dán, không dán đôi
+
+    def test_paste_at_cursor_inserts_and_replaces_selection(self):
+        dlg, s = self.open()
+        dlg.result_box.insert("1.0", "AAA-BBB")
+        dlg.result_box.mark_set("insert", "1.3")
+        self.put("[1] X")
+        self.assertEqual(dlg._paste_at_cursor(), "break")
+        self.assertEqual(self.result(), "AAA[1] X-BBB")
+        dlg.result_box.tag_add("sel", "1.0", "end-1c")
+        self.put("NEW")
+        dlg._paste_at_cursor()
+        self.assertEqual(self.result(), "NEW")
+
+    def test_uses_system_clipboard_not_stale_tk_copy(self):
+        """Tk trên Windows có thể trả về prompt đã copy trước đó; dialog phải đọc qua module clipboard."""
+        from unittest import mock
+
+        dlg, s = self.open()
+        dlg.copy_block()  # Tk/clipboard đang chứa prompt
+        with mock.patch("xlsx_trans.gui.clipboard.get_text", return_value="[1] FROM CHAT"):
+            dlg.paste_result()
+            self.assertEqual(self.result(), "[1] FROM CHAT")
+            dlg.result_box.delete("1.0", "end")
+            dlg._paste_at_cursor()
+            self.assertEqual(self.result(), "[1] FROM CHAT")
+
+    def test_empty_clipboard_leaves_box_untouched(self):
+        from unittest import mock
+
+        dlg, s = self.open()
+        dlg.result_box.insert("1.0", "keep")
+        with mock.patch("xlsx_trans.gui.clipboard.get_text", return_value=None):
+            dlg.paste_result()
+            dlg._paste_at_cursor()
+        self.assertEqual(self.result(), "keep")
+        self.assertIn("Clipboard đang trống", dlg.status.get())
 
     def test_saving_garbage_does_not_add_a_block_or_mark_done(self):
         dlg, s = self.open()

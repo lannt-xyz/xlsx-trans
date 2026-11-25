@@ -9,7 +9,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from .. import __version__, batch, manual, pipeline
 from ..ollama import list_models
-from . import theme
+from . import clipboard, theme
 from .bus import UiBus
 from .dict_dialog import DictionaryDialog, ReviewDialog
 from .history_dialog import HistoryDialog
@@ -523,8 +523,7 @@ class App:
             open_path(target if target.is_dir() else target.parent)
 
     def copy_log(self):
-        self.root.clipboard_clear()
-        self.root.clipboard_append(self.log_view.contents())
+        clipboard.set_text(self.root, self.log_view.contents())
         self.status_var.set("Đã copy nhật ký vào clipboard.")
 
     def toggle_theme(self):

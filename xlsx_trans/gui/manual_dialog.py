@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import scrolledtext, ttk
 
 from ..manual import ManualSession
+from . import clipboard
 
 
 class ManualDialog:
@@ -48,6 +49,7 @@ class ManualDialog:
         for seq in ("<Control-v>", "<Control-V>", "<Shift-Insert>"):
             win.bind(seq, self._ctrl_v)
         self.prompt_box.bind("<<Paste>>", lambda e: self.paste_result())  # ô prompt chỉ để copy, dán luôn chuyển sang ô kết quả
+        self.result_box.bind("<<Paste>>", self._paste_at_cursor)
         self.refresh()
 
     def current(self):
@@ -82,8 +84,7 @@ class ManualDialog:
     def copy_block(self):
         b = self.current()
         if b:
-            self.win.clipboard_clear()
-            self.win.clipboard_append(b.prompt)
+            clipboard.set_text(self.win, b.prompt)
             self.result_box.focus_set()
             self.status.set("Đã copy khối vào clipboard. Dán vào chat, chờ kết quả, copy câu trả lời rồi bấm “Dán từ clipboard”.")
 
@@ -92,23 +93,37 @@ class ManualDialog:
             self.pos = (self.pos + d) % len(self.session.blocks)
             self.refresh()
 
-    def paste_result(self):
-        """Dán clipboard vào ô kết quả (thay toàn bộ nội dung cũ) và đưa con trỏ về ô đó."""
-        try:
-            text = self.win.clipboard_get()
-        except tk.TclError:
+    def _clip_text(self):
+        text = clipboard.get_text(self.win)
+        if not text or not text.strip():
             self.status.set("Clipboard đang trống (hoặc không phải chữ). Hãy copy câu trả lời của chat trước.")
-            return "break"
-        self.result_box.delete("1.0", "end")
-        self.result_box.insert("1.0", text)
-        self.result_box.focus_set()
-        self.status.set(f"Đã dán {len(text.splitlines())} dòng vào ô kết quả. Bấm “3) Lưu kết quả của khối này”.")
+            return None
+        return text
+
+    def paste_result(self):
+        """Nút dán: thay toàn bộ ô kết quả bằng clipboard và đưa con trỏ về ô đó."""
+        text = self._clip_text()
+        if text is not None:
+            self.result_box.delete("1.0", "end")
+            self.result_box.insert("1.0", text)
+            self.result_box.focus_set()
+            self.status.set(f"Đã dán {len(text.splitlines())} dòng vào ô kết quả. Bấm “3) Lưu kết quả của khối này”.")
+        return "break"
+
+    def _paste_at_cursor(self, event=None):
+        """Ctrl+V trong ô kết quả: dán tại con trỏ (thay vùng đang chọn). Không dùng clipboard của Tk vì có thể cũ."""
+        text = self._clip_text()
+        if text is not None:
+            box = self.result_box
+            if box.tag_ranges("sel"):
+                box.delete("sel.first", "sel.last")
+            box.insert("insert", text)
+            box.see("insert")
+            self.status.set(f"Đã dán {len(text.splitlines())} dòng. Bấm “3) Lưu kết quả của khối này”.")
         return "break"
 
     def _ctrl_v(self, event):
-        """Ctrl+V ở bất cứ đâu trong cửa sổ đều dán vào ô kết quả (không bao giờ vào ô prompt)."""
-        if self.win.focus_get() is self.result_box:
-            return None  # ô kết quả tự dán theo mặc định, tránh dán hai lần
+        """Ctrl+V khi con trỏ ở chỗ khác trong cửa sổ (nút, ô prompt…): dán vào ô kết quả, không bao giờ vào ô prompt."""
         return self.paste_result()
 
     def save_result(self):
