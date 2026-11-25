@@ -47,6 +47,8 @@ FIELDS = [
     _f("l_ctx", "Mô hình", "n_ctx", "int", ("llama_cpp", "n_ctx"), "n_ctx", minimum=256, group="llama.cpp"),
     _f("l_threads", "Mô hình", "n_threads (0 = tự chọn)", "int", ("llama_cpp", "n_threads"), "n_threads", minimum=0, group="llama.cpp"),
     _f("l_gpu", "Mô hình", "n_gpu_layers", "int", ("llama_cpp", "n_gpu_layers"), "n_gpu_layers", minimum=0, group="llama.cpp"),
+    _f("l_iso", "Mô hình", "Chạy model ở tiến trình riêng", "bool", ("llama_cpp", "isolate"), "llama_isolate",
+       help="Khuyên dùng: lỗi native của llama.cpp không làm hỏng app.", group="llama.cpp"),
 
     _f("mode", "Dịch", "Kiểu ghi", "choice", ("translate", "mode"), "mode", choices=("replace", "bilingual"),
        help="replace: thay bằng bản dịch. bilingual: giữ cả tiếng Nhật và tiếng Anh.", group="Kiểu ghi"),

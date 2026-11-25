@@ -346,3 +346,9 @@ Mỗi file dịch xong ghi một dòng vào `history.jsonl` (chỉ số liệu, 
 Xem bằng nút **Lịch sử…** (có xuất CSV) hoặc `python app.py --history [N]`. Tắt/bật và giới hạn số dòng ở mục `[history]` trong `config.toml`.
 Ollama báo token và thời gian sinh chính xác; llama.cpp tính tok/s gồm cả thời gian đọc prompt; chế độ chat thủ công chỉ ước lượng token (dấu `~`).
 Khi llama.cpp bị crash native (`access violation`), app dừng cả lượt dịch và in thông tin chẩn đoán (Python, phiên bản thư viện, tham số).
+
+### llama.cpp chạy ở tiến trình riêng
+
+Mặc định (`[llama_cpp] isolate = true`) model `.gguf` được nạp trong một tiến trình con (`xlsx_trans/llama_worker.py`) thay vì trong chính app.
+Lỗi native của llama.cpp (vd. `access violation`) chỉ làm tiến trình con chết: app vẫn sống, dừng lượt dịch và báo rõ nguyên nhân kèm thông tin chẩn đoán.
+Đặt `isolate = false` (hoặc bỏ tick "Chạy model ở tiến trình riêng" trong Cài đặt) để quay lại nạp trong tiến trình chính.

@@ -201,6 +201,7 @@ def default_cfg(**overrides):
         cfg = config.load_config()
     cfg.md = False
     cfg.history_enabled = False  # test không được ghi lịch sử thật
+    cfg.llama_isolate = False  # test dùng llama giả trong tiến trình
     for k, v in overrides.items():
         setattr(cfg, k, v)
     return cfg

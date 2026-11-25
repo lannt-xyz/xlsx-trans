@@ -53,6 +53,7 @@ DEFAULT_CONFIG = {
         "n_ctx": 4096,
         "n_threads": 0,
         "n_gpu_layers": 0,
+        "isolate": True,
         "options": {"temperature": 0},
     },
     "ollama": {
@@ -284,6 +285,7 @@ def load_config(path=None):
     c.n_ctx = int(lc["n_ctx"])
     c.n_threads = int(lc["n_threads"])
     c.n_gpu_layers = int(lc["n_gpu_layers"])
+    c.llama_isolate = bool(lc.get("isolate", True))
     c.llama_options = dict(lc.get("options") or {})
 
     o = data["ollama"]
