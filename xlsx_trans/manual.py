@@ -56,18 +56,46 @@ def decode_item(text):
     return RE_BR.sub("\n", text)
 
 
-def parse_output(text):
-    """{id: chữ}. Bỏ dòng ```; dòng không bắt đầu bằng [n] được nối vào mục trước (chat tự xuống dòng)."""
+RE_MARK = re.compile(r"(?<!\[)\[(\d+)\](?!\])")  # [n] nhưng không phải [[n]] của từ điển
+
+
+def _parse_lines(lines):
     out, cur = {}, None
-    for line in text.splitlines():
-        if line.strip().startswith("```"):
-            continue
+    for line in lines:
         m = RE_ITEM.match(line)
         if m:
             cur = int(m.group(1))
             out[cur] = m.group(2).strip()
         elif cur is not None and line.strip():
             out[cur] = (out[cur] + " " + line.strip()).strip()
+    return out
+
+
+def _parse_inline(text):
+    """Chat gộp mọi mục trên một dòng ("[1] a [2] b [3] c"): tách theo [n] liên tiếp (1,2,3…) hoặc [n] đầu dòng."""
+    marks, last = [], 0
+    for m in RE_MARK.finditer(text):
+        n = int(m.group(1))
+        line_start = not text[text.rfind("\n", 0, m.start()) + 1:m.start()].strip()
+        if line_start or n == last + 1:
+            marks.append((m.start(), m.end(), n))
+            last = n
+    out = {}
+    for k, (_, end, n) in enumerate(marks):
+        stop = marks[k + 1][0] if k + 1 < len(marks) else len(text)
+        out[n] = " ".join(x.strip() for x in text[end:stop].splitlines() if x.strip())
+    return out
+
+
+def parse_output(text):
+    """{id: chữ}. Bỏ dòng ```; dòng không bắt đầu bằng [n] được nối vào mục trước (chat tự xuống dòng).
+    Nếu gần như không có mục nào bắt đầu ở đầu dòng (chat trả về một dòng duy nhất) thì tách theo các [n] liên tiếp."""
+    lines = [ln for ln in text.splitlines() if not ln.strip().startswith("```")]
+    out = _parse_lines(lines)
+    if sum(1 for ln in lines if RE_ITEM.match(ln)) <= 1:
+        inline = _parse_inline("\n".join(lines))
+        if len(inline) > len(out):
+            return inline
     return out
 
 

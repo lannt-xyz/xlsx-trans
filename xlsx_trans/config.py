@@ -36,8 +36,10 @@ DEFAULT_USER_TEMPLATE = "{text}"
 DEFAULT_MANUAL_INSTRUCTION = (
     "You will receive numbered items from a spreadsheet, after the line ITEMS:. "
     "Translate every item from Japanese to English following the rules above. "
-    "Reply with exactly the same items in the same order, one per line, in the format `[n] translation`, "
-    "using the same number n. Do not add, merge, skip or reorder items, and add no commentary or code fences. "
+    "Reply with exactly the same items in the same order, in the format `[n] translation`, using the same number n. "
+    "Put EVERY item on its own line (a real line break after each item, never several items on one line), "
+    "and put the whole reply inside ONE plain-text code block. "
+    "Do not add, merge, skip or reorder items, and add no commentary outside the code block. "
     "`<br>` marks a line break inside an item; keep it as `<br>`. "
     "Keep placeholders such as [[1]] unchanged."
 )

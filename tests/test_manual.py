@@ -81,6 +81,23 @@ class TestFormat(unittest.TestCase):
         self.assertEqual(got, {1: "[[1]] opens [[2]] is not an item", 2: "Two"})
 
 
+    def test_parse_all_items_on_one_line_like_copilot(self):
+        got = manual.parse_output("[1] Hello world [2] Second item, with comma [3] Third")
+        self.assertEqual(got, {1: "Hello world", 2: "Second item, with comma", 3: "Third"})
+
+    def test_parse_one_line_inside_code_fence_and_with_placeholders(self):
+        got = manual.parse_output("```\n[1] [[1]] opens [2] Two ([[2]]) [3] Three\n```")
+        self.assertEqual(got, {1: "[[1]] opens", 2: "Two ([[2]])", 3: "Three"})
+
+    def test_parse_inline_ignores_non_sequential_numbers_in_text(self):
+        got = manual.parse_output("[1] See item [7] for details [2] Two")
+        self.assertEqual(got, {1: "See item [7] for details", 2: "Two"})
+
+    def test_parse_multiline_output_is_not_split_inline(self):
+        got = manual.parse_output("[1] See [2] below\n[2] Two\n[3] Three")
+        self.assertEqual(got, {1: "See [2] below", 2: "Two", 3: "Three"})
+
+
 class SessionCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -169,6 +186,15 @@ class TestApply(SessionCase):
         data = json.loads(s.cache_path().read_text(encoding="utf-8"))
         self.assertEqual(len(data["map"]), n)
         self.assertEqual(data["map"]["りんご"], "EN[りんご]")
+
+    def test_reply_collapsed_on_one_line_still_saves_every_item(self):
+        s = self.session()
+        block = s.scan()[0]
+        one_line = " ".join(f"[{it.id}] EN[{it.masked}]" for it in block.items)
+        n = len(block.items)
+        res = s.apply_output(block, one_line)
+        self.assertEqual((len(res.saved), res.missing, res.bad), (n, [], []))
+        self.assertEqual(block.items, [])
 
     def test_br_in_reply_becomes_newline(self):
         s = self.session()
