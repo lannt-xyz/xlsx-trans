@@ -1,12 +1,25 @@
 """Dịch MỘT file xlsx/xlsm: gom đoạn cần dịch -> dịch (có cache) -> ghi file mới (+ Markdown)."""
+import time
 import zipfile
 from pathlib import Path
 
 from . import markdown as md_export
 from . import backend as llm
+from . import history, llama_local, metrics
 from .cache import TranslationCache
+from . import suggest as suggestions
 from . import tables as table_fix
 from .xlsx_xml import collect_parts, dedupe_table_names, write_package
+
+
+def scan_texts(in_path, cfg):
+    """Các đoạn chữ cần dịch của một file (không gọi model). Lỗi đọc file -> [] (lỗi thật sẽ báo khi dịch)."""
+    try:
+        with zipfile.ZipFile(in_path) as zin:
+            units, _, _ = collect_parts(zin, zin.infolist(), cfg)
+    except (OSError, zipfile.BadZipFile, ValueError):
+        return []
+    return [u.text for u in units]
 
 
 def default_out(in_path, cfg):
@@ -15,7 +28,7 @@ def default_out(in_path, cfg):
     return str(p.with_name(f"{p.stem}{cfg.suffix}{p.suffix}"))
 
 
-def process_xlsx(
+def _process_xlsx(
     in_path,
     out_path,
     cfg,
@@ -25,11 +38,13 @@ def process_xlsx(
     md_path=None,
     cache=None,
     log_header=True,
+    review=None,
 ):
     """Dịch một file. Trả về (số đoạn đã dịch, số lỗi).
 
     md_path  nơi ghi Markdown (mặc định: <out_path>.md); chỉ dùng khi cfg.md
     cache    TranslationCache dùng chung (mặc định: cache riêng <out_path>.cache.json)
+    review   hàm review(candidates) -> {term: "add"|"ignore"} để người dùng duyệt gợi ý từ điển (None = không hỏi)
     log_header  in cảnh báo cấu hình + tóm tắt cấu hình ở đầu (batch tắt đi và in một lần)
     """
     in_path, out_path = Path(in_path), Path(out_path)
@@ -50,6 +65,13 @@ def process_xlsx(
     with zipfile.ZipFile(in_path) as zin:
         infos = zin.infolist()
         units, parsed, tables = collect_parts(zin, infos, cfg)
+        suggestions.review_texts([u.text for u in units], cfg, review, log)
+        if cfg.dictionary:
+            kept = [u for u in units if not cfg.dictionary.needs_translation(u.text, cfg.src_re)]
+            if kept:
+                log(f"Từ điển: giữ nguyên {len(kept)} đoạn (chỉ gồm từ trong danh sách giữ nguyên).")
+                keep_ids = {id(u) for u in kept}
+                units = [u for u in units if id(u) not in keep_ids]
         unique = list(dict.fromkeys(u.text for u in units))
         log(f"Tìm thấy {len(units)} đoạn chữ cần dịch ({len(unique)} chuỗi khác nhau).")
 
@@ -69,6 +91,9 @@ def process_xlsx(
                 break
             try:
                 cache[text] = llm.translate_text(text, cfg)
+            except llama_local.NativeCrash:
+                cache.save()
+                raise  # dừng cả lượt, không thử tiếp hàng trăm đoạn
             except Exception as e:  # noqa: BLE001
                 errors += 1
                 log(f"Lỗi với đoạn «{text[:30]}…»: {e}")
@@ -77,6 +102,8 @@ def process_xlsx(
                 log(f"  {i}/{total}")
                 cache.save()
         cache.save()
+        if cfg.backend == "manual":  # không gọi model ở đây: ước lượng token của các cặp gốc/dịch trong file này
+            metrics.estimate([(t, cache.get(t)) for t in unique if cache.get(t)], cfg.manual_tokenizer)
 
         # Áp bản dịch vào XML
         applied = 0
@@ -98,7 +125,9 @@ def process_xlsx(
         target = Path(md_path) if md_path else out_path.with_suffix(".md")
 
         def gloss(name):  # bản dịch tên sheet, chỉ để tham khảo trong .md (Excel giữ tên gốc)
-            if not cfg.src_re.search(name):
+            if not cfg.src_re.search(name) or (
+                cfg.dictionary and not cfg.dictionary.needs_translation(name, cfg.src_re)
+            ):
                 return None
             if name not in cache:
                 try:
@@ -118,3 +147,29 @@ def process_xlsx(
         except Exception as e:  # noqa: BLE001
             log(f"Không xuất được Markdown: {e}")
     return applied, errors
+
+
+def process_xlsx(in_path, out_path, cfg, *args, **kwargs):
+    """Dịch một file (xem _process_xlsx) và ghi một dòng vào lịch sử với model, token vào/ra và tốc độ."""
+    should_stop = kwargs.get("should_stop") or (lambda: False)
+    usage, t0, status, result = metrics.start(), time.time(), "done", (0, 0)
+    try:
+        result = _process_xlsx(in_path, out_path, cfg, *args, **kwargs)
+        if should_stop():
+            status = "stopped"
+        elif result[1]:
+            status = "partial"
+        return result
+    except BaseException:
+        status = "error"
+        raise
+    finally:
+        metrics.stop()
+        history.record(cfg, {
+            "source": str(in_path), "backend": cfg.backend, "model": cfg.model, "mode": cfg.mode,
+            "segments": result[0], "errors": result[1], "status": status,
+            "prompt_tokens": usage.prompt_tokens, "completion_tokens": usage.completion_tokens,
+            "tps": round(usage.tps, 2) if usage.tps else None, "calls": usage.calls,
+            "seconds": round(time.time() - t0, 1), "exact": usage.exact,
+        })
+

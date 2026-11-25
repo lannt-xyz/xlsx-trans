@@ -3,3 +3,7 @@ openpyxl
 tomli; python_version < "3.11"
 # Tùy chọn - chỉ khi dùng backend llama_cpp (file .gguf):
 # llama-cpp-python
+# Tùy chọn - đếm token chính xác cho chế độ dịch thủ công qua chat (o200k_base):
+# tiktoken
+# Tùy chọn - giao diện đẹp hơn (theme sáng/tối):
+# sv-ttk

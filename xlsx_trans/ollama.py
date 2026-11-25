@@ -3,6 +3,8 @@ và chỉ tới địa chỉ cfg.host (mặc định localhost)."""
 import json
 import urllib.request
 
+from . import metrics
+
 
 def _http_json(url, payload=None, timeout=600):
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
@@ -44,6 +46,7 @@ def translate_text(text, cfg):
     for _ in range(cfg.retries + 1):
         try:
             res = _http_json(f"{cfg.host}/api/chat", payload, timeout=cfg.timeout)
+            metrics.add(res.get("prompt_eval_count"), res.get("eval_count"), (res.get("eval_duration") or 0) / 1e9)
             out = res["message"]["content"].strip()
             if out:
                 return out

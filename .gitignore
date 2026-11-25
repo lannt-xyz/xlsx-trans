@@ -231,3 +231,11 @@ config.local.toml
 # file model nhúng (rất nặng)
 models/
 *.gguf
+
+# bảng từ vựng tiktoken đã tải về
+resources/tiktoken/
+
+# GUI
+.ui_state.json
+config.local.toml
+history.jsonl

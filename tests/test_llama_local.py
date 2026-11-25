@@ -41,6 +41,138 @@ class LlamaCase(unittest.TestCase):
         self.cfg.refresh()
 
 
+FAKE_LLAMA_CPP = """
+import os
+
+
+class Llama:
+    def __init__(self, **kw):
+        if kw["model_path"].endswith("bad.gguf"):
+            raise OSError("exception: access violation reading 0x0000000000000000")
+        self.kw = kw
+
+    def create_chat_completion(self, messages, **params):
+        text = messages[-1]["content"]
+        if "DIE" in text:
+            os._exit(3)
+        if "VIOLATE" in text:
+            raise OSError("exception: access violation reading 0x0000000000000000")
+        return {"choices": [{"message": {"content": "EN:" + text}}], "usage": {"prompt_tokens": 7, "completion_tokens": 3}}
+"""
+
+
+class TestIsolatedWorker(unittest.TestCase):
+    """Tiến trình con thật, với module llama_cpp giả đặt trước trên PYTHONPATH."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dir = Path(self._tmp.name)
+        (self.dir / "llama_cpp.py").write_text(FAKE_LLAMA_CPP, encoding="utf-8")
+        env = mock.patch.dict("os.environ", {"PYTHONPATH": str(self.dir)})
+        env.start()
+        self.addCleanup(env.stop)
+        self.gguf = self.dir / "m.gguf"
+        self.gguf.write_bytes(b"GGUF")
+        llama_local._loaded.update(key=None, llm=None)
+        self.addCleanup(self._close)
+        self.cfg = default_cfg(backend="llama_cpp", model_path=self.gguf, system_prompt="SYS", llama_isolate=True)
+        self.cfg.refresh()
+
+    def _close(self):
+        old = llama_local._loaded["llm"]
+        if isinstance(old, llama_local._Remote):
+            old.close()
+        llama_local._loaded.update(key=None, llm=None)
+
+    def test_translates_through_child_process_and_reports_usage(self):
+        from xlsx_trans import metrics
+
+        u = metrics.start()
+        self.assertEqual(llama_local.translate_text("こんにちは", self.cfg), "EN:こんにちは")
+        metrics.stop()
+        self.assertEqual((u.prompt_tokens, u.completion_tokens), (7, 3))
+        self.assertIsInstance(llama_local._loaded["llm"], llama_local._Remote)
+
+    def test_model_is_loaded_once_and_japanese_survives_the_pipe(self):
+        a = llama_local.translate_text("日本語", self.cfg)
+        pid = llama_local._loaded["llm"].proc.pid
+        b = llama_local.translate_text("もう一度", self.cfg)
+        self.assertEqual((a, b), ("EN:日本語", "EN:もう一度"))
+        self.assertEqual(llama_local._loaded["llm"].proc.pid, pid)
+
+    def test_native_error_in_child_becomes_native_crash_and_app_survives(self):
+        with self.assertRaises(llama_local.NativeCrash) as cm:
+            llama_local.translate_text("VIOLATE", self.cfg)
+        self.assertIn("isolate=True", str(cm.exception))
+
+    def test_child_dying_becomes_native_crash_with_exit_code(self):
+        with self.assertRaises(llama_local.NativeCrash) as cm:
+            llama_local.translate_text("DIE", self.cfg)
+        self.assertIn("mã thoát 3", str(cm.exception))
+
+    def test_load_failure_in_child_is_fatal(self):
+        bad = self.dir / "bad.gguf"
+        bad.write_bytes(b"GGUF")
+        self.cfg.model_path = bad
+        with self.assertRaises(llama_local.NativeCrash) as cm:
+            llama_local.translate_text("x", self.cfg)
+        self.assertIn("Không nạp được model", str(cm.exception))
+
+    def test_missing_worker_file_gives_a_clear_message(self):
+        with mock.patch.object(llama_local, "__file__", str(self.dir / "llama_local.py")):
+            with self.assertRaises(llama_local.NativeCrash) as cm:
+                llama_local.translate_text("x", self.cfg)
+        self.assertIn("llama_worker.py", str(cm.exception))
+        self.assertIn("git pull", str(cm.exception))
+
+    def test_changing_model_restarts_child(self):
+        llama_local.translate_text("a", self.cfg)
+        first = llama_local._loaded["llm"]
+        other = self.dir / "o.gguf"
+        other.write_bytes(b"GGUF")
+        self.cfg.model_path = other
+        llama_local.translate_text("a", self.cfg)
+        self.assertIsNot(llama_local._loaded["llm"], first)
+        self.assertIsNotNone(first.proc.poll())  # tiến trình cũ đã thoát
+
+
+class TestNativeCrash(LlamaCase):
+    def crash(self):
+        _ = FakeLlama  # mô phỏng ctypes: OSError "exception: access violation reading 0x0..."
+        return OSError("exception: access violation reading 0x0000000000000000")
+
+    def test_access_violation_raises_native_crash_without_retry(self):
+        llama_local.translate_text("warm", self.cfg)
+        FakeLlama.instances[0].reply = self.crash()
+        with self.assertRaises(llama_local.NativeCrash) as cm:
+            llama_local.translate_text("x", self.cfg)
+        self.assertIn("n_ctx=", str(cm.exception))
+        self.assertEqual(len(FakeLlama.instances[0].calls), 2)  # 1 warm + 1 lần lỗi, không retry
+
+    def test_pipeline_aborts_run_on_native_crash(self):
+        src = fx.build_fixture(self.dir / "in.xlsx")
+        with mock.patch.object(backend, "check"), \
+                mock.patch.object(backend, "translate_text", side_effect=llama_local.NativeCrash("boom")) as m:
+            with self.assertRaises(llama_local.NativeCrash):
+                pipeline.process_xlsx(src, self.dir / "out.xlsx", self.cfg, log=lambda *_: None)
+        self.assertEqual(m.call_count, 1)
+
+    def test_load_failure_is_fatal_and_reported_once(self):
+        with mock.patch.object(llama_local, "_import_llama", side_effect=OSError("exception: access violation reading 0x0")):
+            with self.assertRaises(llama_local.NativeCrash) as cm:
+                llama_local.translate_text("x", self.cfg)
+        self.assertIn("Không nạp được model", str(cm.exception))
+        self.assertIn("n_gpu_layers=", str(cm.exception))
+
+    def test_ordinary_errors_still_retry(self):
+        llama_local.translate_text("warm", self.cfg)
+        FakeLlama.instances[0].reply = RuntimeError("other")
+        with self.assertRaises(RuntimeError):
+            llama_local.translate_text("x", self.cfg)
+        self.assertEqual(len(FakeLlama.instances[0].calls), 1 + self.cfg.retries + 1)
+
+
 class TestLlamaTranslate(LlamaCase):
     def test_model_and_options_come_from_llama_section(self):
         self.assertEqual(self.cfg.model, "m.gguf")

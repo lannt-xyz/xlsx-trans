@@ -9,6 +9,8 @@ import re
 import sys
 from pathlib import Path
 
+from .dictionary import PLACEHOLDER_NOTE, Dictionary
+
 try:
     import tomllib
 except ImportError:  # Python < 3.11
@@ -31,8 +33,18 @@ DEFAULT_SYSTEM_PROMPT = (
     "Keep line breaks as they are. If part of the text is already English, keep it."
 )
 DEFAULT_USER_TEMPLATE = "{text}"
+DEFAULT_MANUAL_INSTRUCTION = (
+    "You will receive numbered items from a spreadsheet, after the line ITEMS:. "
+    "Translate every item from Japanese to English following the rules above. "
+    "Reply with exactly the same items in the same order, in the format `[n] translation`, using the same number n. "
+    "Put EVERY item on its own line (a real line break after each item, never several items on one line), "
+    "and put the whole reply inside ONE plain-text code block. "
+    "Do not add, merge, skip or reorder items, and add no commentary outside the code block. "
+    "`<br>` marks a line break inside an item; keep it as `<br>`. "
+    "Keep placeholders such as [[1]] unchanged."
+)
 
-BACKENDS = ("ollama", "llama_cpp")
+BACKENDS = ("ollama", "llama_cpp", "manual")
 
 DEFAULT_CONFIG = {
     "backend": {"type": "ollama"},
@@ -41,6 +53,7 @@ DEFAULT_CONFIG = {
         "n_ctx": 4096,
         "n_threads": 0,
         "n_gpu_layers": 0,
+        "isolate": True,
         "options": {"temperature": 0},
     },
     "ollama": {
@@ -77,6 +90,25 @@ DEFAULT_CONFIG = {
         "markdown_max_cols": 200,
         "cache": True,
     },
+    "dictionary": {
+        "enabled": True,
+        "files": ["resources/dictionary.txt"],
+        "suggest": True,
+        "suggest_max": 50,
+        "ignore_file": "resources/dictionary.ignore.txt",
+        "placeholder_note": PLACEHOLDER_NOTE,
+    },
+    "manual": {
+        "tokenizer": "o200k_base",
+        "block_tokens": 6000,
+        "block_max_items": 300,
+        "instruction_file": "prompts/manual.txt",
+    },
+    "history": {
+        "enabled": True,
+        "file": "history.jsonl",
+        "max_entries": 2000,
+    },
     "batch": {
         "recursive": True,
         "continue_on_error": True,
@@ -87,9 +119,25 @@ DEFAULT_CONFIG = {
 class Config:
     """Cấu hình đã nạp. Có thể copy.copy() rồi đổi thuộc tính (GUI / tham số dòng lệnh làm vậy)."""
 
+    def reload_dictionary(self):
+        """Nạp lại từ điển từ self.dict_files (GUI gọi sau khi người dùng sửa)."""
+        if not self.dict_enabled:
+            self.dictionary = Dictionary()
+            self.ignored = set()
+            return
+        missing = []
+        self.dictionary = Dictionary.load(self.dict_files, missing)
+        self.dict_missing = missing
+        from .suggest import load_ignored
+
+        self.ignored = load_ignored(self.dict_ignore_file)
+
     def refresh(self):
         """Tính lại `model` và `options` theo backend đang chọn (gọi sau khi đổi backend/model/model_path)."""
-        if self.backend == "llama_cpp":
+        if self.backend == "manual":
+            self.model = "manual"
+            self.options = {}
+        elif self.backend == "llama_cpp":
             self.model = Path(str(self.model_path)).name
             self.options = dict(self.llama_options)
         else:
@@ -101,6 +149,8 @@ class Config:
         parts = [self.model, self.system_prompt, self.user_template, self.options]
         if self.backend != "ollama":
             parts.append(self.backend)
+        if self.dictionary:  # chỉ khi có từ điển, để cache cũ (không dùng từ điển) vẫn hợp lệ
+            parts += [self.dictionary.signature(), self.placeholder_note]
         blob = json.dumps(parts, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
@@ -111,6 +161,79 @@ def deep_merge(base, extra):
             deep_merge(base[k], v)
         else:
             base[k] = v
+
+
+def _resolve(rel, base_dir):
+    """Đường dẫn tuyệt đối của một file khai báo trong config (None nếu bỏ trống)."""
+    if not rel:
+        return None
+    p = Path(str(rel)).expanduser()
+    return p if p.is_absolute() else base_dir / p
+
+
+_BARE_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _toml_value(v):
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return repr(v)
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(_toml_value(x) for x in v) + "]"
+    return json.dumps(str(v), ensure_ascii=False)  # chuỗi JSON cũng là chuỗi TOML hợp lệ
+
+
+def _toml_key(k):
+    return k if _BARE_KEY.match(k) else json.dumps(k, ensure_ascii=False)
+
+
+def dump_toml(data, _prefix=()):
+    """Ghi dict lồng nhau (str/int/float/bool/list/dict) ra TOML. Không giữ comment."""
+    scalars = {k: v for k, v in data.items() if not isinstance(v, dict)}
+    tables = {k: v for k, v in data.items() if isinstance(v, dict)}
+    lines = []
+    if _prefix and (scalars or not tables):
+        lines.append("[" + ".".join(_toml_key(k) for k in _prefix) + "]")
+    lines += [f"{_toml_key(k)} = {_toml_value(v)}" for k, v in scalars.items()]
+    out = "\n".join(lines)
+    for k, v in tables.items():
+        sub = dump_toml(v, _prefix + (k,))
+        if sub:
+            out += ("\n\n" if out else "") + sub
+    return out + ("\n" if not _prefix else "")
+
+
+def _apply_updates(base, updates):
+    """Như deep_merge nhưng giá trị None nghĩa là xóa khóa đó khỏi `base`."""
+    for k, v in updates.items():
+        if v is None:
+            base.pop(k, None)
+        elif isinstance(v, dict):
+            node = base.setdefault(k, {})
+            if not isinstance(node, dict):
+                node = base[k] = {}
+            _apply_updates(node, v)
+            if not node:
+                base.pop(k, None)
+        else:
+            base[k] = v
+
+
+def save_overrides(updates, path):
+    """Gộp `updates` (dict lồng nhau theo cấu trúc config.toml) vào file cấu hình riêng (mặc định config.local.toml).
+
+    Giữ các mục khác đã có trong file, nhưng comment trong file đó sẽ mất. Trả về đường dẫn đã ghi.
+    """
+    path = Path(path)
+    existing = {}
+    if path.is_file():
+        with open(path, "rb") as fh:
+            existing = tomllib.load(fh)
+    _apply_updates(existing, updates)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(dump_toml(existing), encoding="utf-8")
+    return path
 
 
 def read_text_setting(rel, base_dir, default, warnings, label, warn=True):
@@ -162,6 +285,7 @@ def load_config(path=None):
     c.n_ctx = int(lc["n_ctx"])
     c.n_threads = int(lc["n_threads"])
     c.n_gpu_layers = int(lc["n_gpu_layers"])
+    c.llama_isolate = bool(lc.get("isolate", True))
     c.llama_options = dict(lc.get("options") or {})
 
     o = data["ollama"]
@@ -172,8 +296,12 @@ def load_config(path=None):
     c.retries = int(o["retries"])
     c.ollama_options = dict(o.get("options") or {})
 
+    c.local_config_path = Path(path).expanduser() if path else APP_DIR / "config.local.toml"
+
     pr = data["prompt"]
     set_by_user = user_data.get("prompt", {})
+    c.system_file = _resolve(pr.get("system_file"), base_dir)
+    c.user_file = _resolve(pr.get("user_file"), base_dir)
     c.system_prompt = read_text_setting(
         pr.get("system_file"), base_dir, DEFAULT_SYSTEM_PROMPT, c.warnings, "prompt.system_file",
         warn="system_file" in set_by_user,
@@ -209,6 +337,45 @@ def load_config(path=None):
     c.md_max_rows = int(out["markdown_max_rows"])
     c.md_max_cols = int(out["markdown_max_cols"])
     c.cache = bool(out["cache"])
+
+    d = data["dictionary"]
+    c.dict_enabled = bool(d["enabled"])
+    declared = "files" in user_data.get("dictionary", {})
+    files = d["files"] if isinstance(d["files"], list) else [d["files"]]
+    c.dict_files = []
+    for f in files:
+        fp = Path(str(f)).expanduser()
+        c.dict_files.append(fp if fp.is_absolute() else base_dir / fp)
+    c.suggest = bool(d["suggest"])
+    c.suggest_max = int(d["suggest_max"])
+    ip = Path(str(d["ignore_file"])).expanduser()
+    c.dict_ignore_file = ip if ip.is_absolute() else base_dir / ip
+    c.ignored = set()
+    c.placeholder_note = str(d["placeholder_note"] or PLACEHOLDER_NOTE)
+    c.dictionary = Dictionary()
+    c.dict_missing = []
+    c.reload_dictionary()
+    if declared:  # đường dẫn do người dùng khai báo mà thiếu file thì báo; đường dẫn mặc định thì im lặng
+        for m in c.dict_missing:
+            c.warnings.append(f"Không đọc được file từ điển: {m}")
+
+    mn = data["manual"]
+    c.manual_tokenizer = str(mn["tokenizer"])
+    c.block_tokens = int(mn["block_tokens"])
+    c.block_max_items = int(mn["block_max_items"])
+    if c.block_tokens < 200 or c.block_max_items < 1:
+        raise ValueError("manual.block_tokens phải >= 200 và manual.block_max_items >= 1.")
+    set_manual = user_data.get("manual", {})
+    c.manual_file = _resolve(mn.get("instruction_file"), base_dir)
+    c.manual_instruction = read_text_setting(
+        mn.get("instruction_file"), base_dir, DEFAULT_MANUAL_INSTRUCTION, c.warnings, "manual.instruction_file",
+        warn="instruction_file" in set_manual,
+    )
+
+    h = data["history"]
+    c.history_enabled = bool(h["enabled"])
+    c.history_file = _resolve(h["file"], base_dir) or APP_DIR / "history.jsonl"
+    c.history_max = int(h["max_entries"])
 
     b = data["batch"]
     c.recursive = bool(b["recursive"])

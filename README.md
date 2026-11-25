@@ -98,6 +98,29 @@ Tham số dòng lệnh **ghi đè** giá trị trong file cấu hình. Không tr
 
 File gốc **không bị sửa**. File output luôn phải khác file input.
 
+### Dịch thủ công qua chat (không cần model chạy trên máy)
+
+Khi model local quá chậm, bạn có thể dùng một công cụ chat bên ngoài (vd. chat nội bộ của công ty): app chia nội dung thành các **khối** vừa cửa sổ ngữ cảnh, bạn copy từng khối vào chat, dán kết quả lại, app tự ghi vào cache rồi tạo file xlsx / md đúng cấu trúc `_en` / `_en_md`.
+
+Trên giao diện: chọn file/folder → **Dịch thủ công (chat)…**
+1. Copy khối hiện tại (nút **Copy khối này**) → dán vào chat.
+2. Dán câu trả lời của chat vào ô bên dưới → **Lưu kết quả của khối này**. App báo đã lưu bao nhiêu mục, mục nào thiếu hoặc hỏng; khối đó được thay bằng một khối mới chỉ gồm các mục cần hỏi lại.
+3. Làm hết các khối (hoặc dừng giữa chừng, tiến độ nằm trong cache) → **Tạo file xlsx / md từ bản dịch đã có**.
+
+Dòng lệnh / Docker (không cần giao diện):
+```bash
+python app.py data --manual-export ./blocks      # tạo blocks/block-001.txt, block-001.json...
+# dán block-001.txt vào chat, lưu câu trả lời vào blocks/block-001.out.txt (làm tương tự các khối khác)
+python app.py data --manual-import ./blocks      # kiểm tra, ghi cache, rồi tạo file; mục thiếu -> block-001-retry1.txt
+```
+
+- Mỗi mục là một dòng `[n] nội dung`; xuống dòng trong ô được mã hóa thành `<br>`. Chat phải trả lại đúng `[n] bản dịch`, cùng số thứ tự.
+- Chia khối theo token (`manual.tokenizer = "o200k_base"` nếu cài `tiktoken`, không có thì ước lượng dư). `block_tokens` mặc định 6000: kết quả chat cũng dài cỡ đó và nhiều chat giới hạn độ dài câu trả lời, nên đừng đặt sát cửa sổ ngữ cảnh; tăng dần nếu chat trả đủ. Để đếm chính xác: `pip install tiktoken` rồi chạy **một lần** `python app.py --prefetch-tokenizer` (lệnh này CÓ dùng mạng để tải bảng từ vựng, không gửi dữ liệu của bạn). File được lưu ở `resources/tiktoken/` (đã `.gitignore`), từ đó đếm hoàn toàn trên máy; copy thư mục này sang máy/container không có mạng là dùng được. Chưa cài `tiktoken` hoặc không tải được thì app tự dùng ước lượng thiên về dư, và `manual.tokenizer = "estimate"` để không bao giờ thử nạp `tiktoken`.
+- Từ điển giữ nguyên tiếng Nhật vẫn áp dụng: từ khóa được thay bằng `[[n]]` trong khối gửi đi và khôi phục khi nhập; mục nào chat làm mất `[[n]]` sẽ bị từ chối và đưa vào khối hỏi lại. Ô chỉ gồm từ khóa không cần gửi.
+- Chuỗi trùng chỉ gửi một lần; chuỗi đã có trong cache không gửi lại. Chuỗi nào chưa có bản dịch khi tạo file thì giữ nguyên tiếng Nhật và được báo lỗi trong log.
+- **Dữ liệu sẽ đi sang công cụ chat bên ngoài app**: chỉ dùng chat đã được phép nhận loại dữ liệu này.
+- Chỉnh chỉ dẫn gửi kèm đầu khối ở `prompts/manual.txt`.
+
 ### Dùng file model .gguf (không cần Ollama)
 
 Có thể nhúng thẳng file model GGUF vào app bằng `llama-cpp-python`: model chạy ngay trong tiến trình Python, không có cổng HTTP nào.
@@ -153,6 +176,8 @@ Mọi giá trị trước đây nằm cứng trong code giờ nằm trong `confi
 | `[prompt]` | Đường dẫn file system prompt và user prompt |
 | `[translate]` | `source_pattern` (regex chọn đoạn cần dịch), `mode`, ký tự nối khi song ngữ |
 | `[targets]` | Bật/tắt từng phần được dịch: `cells`, `shapes`, `charts`, `diagrams`, `comments` (`table_headers` luôn theo `cells`) |
+| `[manual]` | `tokenizer`, `block_tokens`, `block_max_items`, `instruction_file` (dịch thủ công qua chat) |
+| `[dictionary]` | `enabled`, `files` (file từ điển giữ nguyên tiếng Nhật), `suggest`, `suggest_max`, `ignore_file`, `placeholder_note` |
 | `[batch]` | `recursive` (vào thư mục con), `continue_on_error` (file lỗi thì dịch tiếp file khác) |
 | `[output]` | `suffix`, `markdown_suffix` (đuôi tên file/folder kết quả), xuất Markdown, giới hạn dòng/cột Markdown, bật/tắt cache |
 
@@ -164,6 +189,50 @@ Cách nạp cấu hình:
 4. Tham số dòng lệnh và giá trị chọn trên giao diện ghi đè tất cả.
 
 Cấu hình sai (regex lỗi, `mode` không hợp lệ, TOML sai cú pháp) sẽ báo lỗi rõ ràng khi khởi động. Nếu file prompt bị thiếu, app dùng prompt mặc định trong code và in cảnh báo.
+
+### Từ điển giữ nguyên tiếng Nhật
+
+Tên màn hình, tên item, tên người, message... cần để nguyên tiếng Nhật thì thêm vào `resources/dictionary.txt` (mỗi dòng một từ, chia nhóm bằng `[tên nhóm]`, dòng `#` là ghi chú):
+
+```
+[screen]
+ログイン画面
+[person]
+山田太郎
+[message]
+保存しました。
+```
+
+```bash
+python app.py --dict-add person 山田太郎     # thêm nhanh vào file từ điển đầu tiên
+python app.py --dict-list                    # xem danh sách
+python app.py data --dict khac.txt           # thêm file từ điển (dùng được nhiều lần); --no-dict để tắt
+```
+
+Giao diện có nút **Từ điển…** để sửa trực tiếp file.
+
+**Gợi ý tự động.** Mỗi lần dịch một file hoặc cả folder, app quét trước (không gọi model) và hỏi bạn về những từ *có vẻ là danh từ riêng* mà chưa có trong từ điển; bạn chọn từ nào thì thêm từ đó rồi mới dịch:
+
+| Loại | Nhận diện bằng |
+|---|---|
+| `person` | chữ đứng trước さん / 様 / 氏 / 殿 / 君 (loại お客様, ご担当者様...) |
+| `screen` | ô ngắn có đuôi 画面 / 一覧 / 登録 / 詳細 / 管理 / 入力 / 確認 / 検索... |
+| `label` | chữ nằm trong 「」 『』 【】 |
+| `message` | ô ngắn kiểu 保存しました。 / エラー... |
+| `item` | ô chỉ gồm katakana (ưu tiên thấp nhất) |
+
+- Terminal: nhập số cần thêm (`1,3-5`, `a` = tất cả, Enter = bỏ qua lần này); sau đó có thể chọn "không hỏi lại" các từ còn lại. Giao diện: hộp thoại có danh sách để chọn. Khi dịch cả folder chỉ hỏi **một lần**, số lần xuất hiện được cộng gộp qua mọi file.
+- Từ được thêm có hiệu lực ngay trong lần dịch đó. Từ bị "không hỏi lại" lưu ở `resources/dictionary.ignore.txt` (xóa dòng để được gợi ý lại).
+- Đây chỉ là heuristic nên có gợi ý sai và có từ bị sót; bạn quyết định từng từ. Không có terminal tương tác (chạy tự động, cron) thì gợi ý bị bỏ qua. Tắt hẳn bằng `--no-suggest` hoặc `dictionary.suggest = false`.
+- Docker: `docker compose run` có terminal nên hỏi được; thư mục `resources/` được mount vào container để lưu từ điển.
+
+Cách từ điển áp dụng khi dịch:
+
+- Ô chỉ gồm từ trong danh sách (cả khi kèm số, dấu câu) → giữ nguyên, **không gọi model**. Áp dụng cả cho tiêu đề Table (ô và tên cột vẫn khớp nhau) và tên sheet trong Markdown.
+- Từ nằm trong câu dài hơn → được thay bằng ký hiệu `[[1]]`, `[[2]]`… trước khi gửi cho model rồi khôi phục đúng chữ gốc sau khi dịch. Nếu model làm mất ký hiệu, app thử lại một lần; vẫn mất thì đoạn đó giữ nguyên bản gốc và tính là một lỗi trong log. Model nhỏ đôi khi làm mất ký hiệu, nên hãy kiểm tra log.
+- Từ dài được khớp trước (「ログイン画面」 trước 「ログイン」); phân biệt hoa thường; khớp theo chuỗi con, nên từ ngắn như 「会」 sẽ khớp cả trong 「会社」.
+- Sửa từ điển thì cache bản dịch cũ tự không dùng lại. Trong Docker, thư mục `resources/` được mount vào container.
+- Thay đổi chỉ dẫn gửi cho model về ký hiệu bằng `[dictionary] placeholder_note` trong `config.toml`.
 
 ### Tùy chỉnh prompt
 
@@ -227,6 +296,11 @@ Dockerfile, docker-compose.yml, config.docker.toml   chạy trong container
 xlsx_trans/
   config.py            nạp config.toml/prompt, giá trị mặc định
   backend.py           chọn backend model (ollama | llama_cpp)
+  manual.py            dịch thủ công qua chat: chia khối, nhập kết quả
+  tokens.py            đếm token (tiktoken hoặc ước lượng)
+  suggest.py           gợi ý danh từ riêng chưa có trong từ điển
+  dictionary.py        từ điển giữ nguyên tiếng Nhật (bảo vệ/khôi phục từ khóa)
+  tables.py            giữ Excel Table nhất quán sau khi dịch
   ollama.py            gọi API Ollama (nơi duy nhất có code mạng)
   llama_local.py       chạy file .gguf trong tiến trình (llama-cpp-python)
   cache.py             cache bản dịch theo chữ ký (model + prompt + options)
@@ -254,3 +328,27 @@ python -m unittest discover -v
 ## Giấy phép
 
 Apache License 2.0, xem file [LICENSE](LICENSE).
+
+## Giao diện (GUI) mới
+
+Màn hình chính chỉ giữ những thứ dùng mỗi lần: chọn file/folder (có xem trước kế hoạch), chế độ thay/song ngữ, Markdown, gợi ý từ điển, trạng thái model, tiến độ + thời gian còn lại, nhật ký tô màu.
+Mọi tùy chọn khác nằm trong **⚙ Cài đặt** (`Ctrl+,`) chia theo tab: Mô hình, Dịch, Đối tượng, Output, Từ điển, Chat thủ công, Prompt…
+
+- **Áp dụng**: chỉ cho phiên hiện tại. **Lưu**: ghi các mục đã đổi vào `config.local.toml` (đè lên `config.toml`; lưu ý comment trong file riêng này không được giữ) và các file prompt.
+- Phím tắt: `Ctrl+O` chọn file, `Ctrl+Shift+O` chọn folder, `Ctrl+Enter` bắt đầu, `Esc` dừng.
+- Nút ☾/☀ đổi theme sáng/tối; cỡ cửa sổ, theme, thư mục gần nhất nhớ trong `.ui_state.json`.
+- Cài thêm `sv-ttk` (tùy chọn) để có giao diện hiện đại hơn; không có thì dùng theme dự phòng.
+- Test giao diện cần màn hình ảo: `xvfb-run python -m unittest discover -s tests -t .`
+
+## Lịch sử dịch
+
+Mỗi file dịch xong ghi một dòng vào `history.jsonl` (chỉ số liệu, không có nội dung file): thời gian, file, backend, model, token vào/ra, tok/s, thời gian chạy, số đoạn dịch, số lỗi, kết quả.
+Xem bằng nút **Lịch sử…** (có xuất CSV) hoặc `python app.py --history [N]`. Tắt/bật và giới hạn số dòng ở mục `[history]` trong `config.toml`.
+Ollama báo token và thời gian sinh chính xác; llama.cpp tính tok/s gồm cả thời gian đọc prompt; chế độ chat thủ công chỉ ước lượng token (dấu `~`).
+Khi llama.cpp bị crash native (`access violation`), app dừng cả lượt dịch và in thông tin chẩn đoán (Python, phiên bản thư viện, tham số).
+
+### llama.cpp chạy ở tiến trình riêng
+
+Mặc định (`[llama_cpp] isolate = true`) model `.gguf` được nạp trong một tiến trình con (`xlsx_trans/llama_worker.py`) thay vì trong chính app.
+Lỗi native của llama.cpp (vd. `access violation`) chỉ làm tiến trình con chết: app vẫn sống, dừng lượt dịch và báo rõ nguyên nhân kèm thông tin chẩn đoán.
+Đặt `isolate = false` (hoặc bỏ tick "Chạy model ở tiến trình riêng" trong Cài đặt) để quay lại nạp trong tiến trình chính.

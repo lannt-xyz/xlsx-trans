@@ -20,6 +20,9 @@ n_ctx = 4096
 n_threads = 0
 # Số lớp đẩy lên GPU (0 = chỉ CPU).
 n_gpu_layers = 0
+# true = chạy model trong một tiến trình con riêng (khuyên dùng: lỗi native của llama.cpp không làm hỏng app,
+# và tránh xung đột thư viện khi chạy từ giao diện). false = nạp ngay trong tiến trình chính.
+isolate = true
 
 [llama_cpp.options]
 # temperature, top_p, top_k, repeat_penalty, seed, num_predict (= max_tokens)
@@ -85,6 +88,43 @@ cache = true
 # <tên folder><suffix><markdown_suffix> (ví dụ data_en_md), cả hai nằm cạnh folder đầu vào và
 # giữ nguyên cấu trúc thư mục con.
 markdown_suffix = "_md"
+
+[dictionary]
+# Từ điển GIỮ NGUYÊN tiếng Nhật (tên màn hình, tên item, tên người, message...). Xem dictionary.txt.
+enabled = true
+# Các file từ điển, đường dẫn tương đối so với thư mục chứa file config này. File đầu tiên là nơi
+# `python app.py --dict-add <nhóm> <từ>` và nút "Từ điển…" trên giao diện ghi vào.
+files = ["resources/dictionary.txt"]
+# Khi dịch file/folder, app quét trước và GỢI Ý những từ có vẻ là danh từ riêng (tên người, tên màn hình,
+# nhãn trong 「」, message, từ katakana...) chưa có trong từ điển để bạn duyệt rồi thêm.
+suggest = true
+# Số gợi ý tối đa mỗi lần hỏi (ưu tiên theo loại và số lần xuất hiện).
+suggest_max = 50
+# Từ bạn chọn "không hỏi lại" được lưu ở đây.
+ignore_file = "resources/dictionary.ignore.txt"
+# (tùy chọn) chỉ dẫn thêm cho model khi đoạn chữ có chứa từ khóa được bảo vệ. Bỏ trống = dùng mặc định trong code.
+# placeholder_note = "..."
+
+[manual]
+# Dịch THỦ CÔNG qua chat bên ngoài (nút "Dịch thủ công (chat)…" hoặc --manual-export / --manual-import).
+# Bộ đếm token để chia khối cho vừa cửa sổ ngữ cảnh. Chính xác: pip install tiktoken, rồi chạy một lần
+# `python app.py --prefetch-tokenizer` (có dùng mạng để tải bảng từ vựng). Không có tiktoken thì ước lượng thận trọng;
+# đặt "estimate" để không bao giờ thử nạp tiktoken.
+tokenizer = "o200k_base"
+# Số token tối đa của MỘT khối (chỉ dẫn + các mục). Kết quả chat cũng dài cỡ đó, nên đừng đặt sát cửa sổ ngữ cảnh
+# (200k) mà hãy theo giới hạn độ dài câu trả lời của chat. Tăng dần nếu chat trả đủ.
+block_tokens = 6000
+# Số mục tối đa mỗi khối (khối quá nhiều mục thì chat dễ bỏ sót dòng).
+block_max_items = 300
+# Chỉ dẫn gửi kèm đầu mỗi khối (sau system prompt). Sửa file này để hợp với chat của bạn.
+instruction_file = "prompts/manual.txt"
+
+[history]
+# Ghi lịch sử mỗi lượt dịch (mỗi file một dòng): model, token vào/ra, tok/s, thời gian, kết quả.
+# Chỉ lưu số liệu trên máy, KHÔNG lưu nội dung file. Xem bằng nút "Lịch sử…" hoặc `python app.py --history`.
+enabled = true
+file = "history.jsonl"
+max_entries = 2000
 
 [batch]
 recursive = true           # quét cả thư mục con
