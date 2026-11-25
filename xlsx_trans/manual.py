@@ -183,6 +183,14 @@ class ManualSession:
                 b.items = [it for it in b.items if it.text not in saved]
         return res
 
+    def shrink_block(self, block):
+        """Sau khi lưu một phần: giữ nguyên khối nhưng chỉ còn các mục chưa dịch, đánh số lại từ 1 và dựng lại prompt
+        (không sinh thêm khối, nên số khối không phình ra và lưu lại nhiều lần vẫn an toàn)."""
+        block.items = [Item(n, it.text, it.masked, it.mapping) for n, it in enumerate(block.items, 1)]
+        block.prompt = render_prompt(self.cfg, block.items)
+        block.tokens = self.counter(block.prompt)
+        return block
+
     def retry_block(self, block, res):
         """Khối mới chỉ gồm các mục thiếu / hỏng của lần dán vừa rồi (đánh số lại từ 1)."""
         want = set(res.retry_ids)
