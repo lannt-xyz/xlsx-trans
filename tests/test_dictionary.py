@@ -119,10 +119,12 @@ class Echo:
 
     def __init__(self, drop_placeholders_times=0):
         self.calls = []
+        self.temps = []
         self.drop = drop_placeholders_times
 
     def __call__(self, text, cfg):
         self.calls.append((text, cfg.system_prompt))
+        self.temps.append((cfg.options or {}).get("temperature"))
         if self.drop > 0:
             self.drop -= 1
             return "EN without placeholders"
@@ -165,12 +167,31 @@ class TestBackendTranslate(unittest.TestCase):
         self.assertEqual(len(fake.calls), 2)
         self.assertIn("山田太郎", out)
 
-    def test_raises_when_model_keeps_dropping_placeholders(self):
+    def test_retry_raises_temperature_and_drops_seed(self):
+        cfg, fake = self.cfg(), Echo(drop_placeholders_times=1)
+        cfg.options = {"temperature": 0, "seed": 1}
+        with patch_translate(fake):
+            backend.translate_text("山田太郎が承認する", cfg)
+        self.assertEqual(fake.temps, [0, backend.RETRY_TEMPERATURE])
+        self.assertEqual(cfg.options, {"temperature": 0, "seed": 1})  # cfg gốc không bị đổi
+
+    def test_falls_back_to_keep_note_without_placeholders(self):
+        cfg, fake = self.cfg(), Echo(drop_placeholders_times=2)
+        with patch_translate(fake):
+            out = backend.translate_text("山田太郎が承認する", cfg)
+        self.assertEqual(len(fake.calls), 3)
+        text, system = fake.calls[2]
+        self.assertEqual(text, "山田太郎が承認する")  # gốc, không có [[n]]
+        self.assertIn("「山田太郎」", system)
+        self.assertNotIn("[[1]]", system)
+        self.assertIn("山田太郎", out)
+
+    def test_raises_with_raw_output_when_terms_are_still_missing(self):
         cfg, fake = self.cfg(), Echo(drop_placeholders_times=5)
         with patch_translate(fake):
-            with self.assertRaisesRegex(RuntimeError, "từ điển"):
+            with self.assertRaisesRegex(RuntimeError, "từ điển.*EN without placeholders"):
                 backend.translate_text("山田太郎が承認する", cfg)
-        self.assertEqual(len(fake.calls), 2)
+        self.assertEqual(len(fake.calls), 3)
 
     def test_text_without_any_term_is_sent_as_is_with_original_prompt(self):
         cfg, fake = self.cfg(), Echo()

@@ -10,7 +10,8 @@ File từ điển là văn bản thuần, mỗi dòng một từ, chia nhóm b�
 Cách áp dụng khi dịch:
   * Đoạn chữ mà sau khi bỏ các từ trong từ điển không còn tiếng Nhật nào (ví dụ chỉ gồm tên màn hình) -> giữ nguyên, không gọi model.
   * Từ nằm trong câu dài hơn -> thay bằng ký hiệu giữ chỗ [[1]], [[2]]... trước khi gửi cho model, dịch xong
-    khôi phục lại đúng chữ gốc. Nếu model làm mất ký hiệu thì thử lại; vẫn mất thì đoạn đó giữ nguyên bản gốc.
+    khôi phục lại đúng chữ gốc. Nếu model làm mất ký hiệu: thử lại với nhiệt độ cao hơn; vẫn mất thì dịch không dùng
+    ký hiệu (dặn model giữ nguyên các từ, rồi kiểm tra từ nào cũng còn); vẫn không được thì đoạn đó giữ nguyên bản gốc.
 Từ dài được ưu tiên khớp trước (「ログイン画面」 trước 「ログイン」). Phân biệt hoa thường.
 """
 import hashlib
@@ -130,6 +131,13 @@ class Dictionary:
         """False nếu ngoài các từ trong từ điển, đoạn chữ không còn ký tự nguồn (tiếng Nhật) nào."""
         masked, _ = self.protect(text)
         return bool(src_re.search(_PH.sub("", masked)))
+
+    @staticmethod
+    def keep_note(terms):
+        """Dặn model giữ nguyên các từ (dùng khi dịch không qua ký hiệu giữ chỗ)."""
+        return ("Keep the following terms exactly as written in the original language (do not translate, "
+                "transliterate or alter them) and copy them verbatim into the translation: "
+                + ", ".join(f"「{t}」" for t in terms))
 
     @staticmethod
     def restore(translated, mapping):
