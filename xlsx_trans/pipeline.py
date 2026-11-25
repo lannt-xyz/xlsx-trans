@@ -119,7 +119,8 @@ def _process_xlsx(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         write_package(zin, infos, out_path, parsed)
 
-    log(f"Xong: đã dịch {applied}/{len(units)} đoạn, {errors} lỗi. Đã lưu: {out_path}")
+    stats = metrics.summary_text()
+    log(f"Xong: đã dịch {applied}/{len(units)} đoạn, {errors} lỗi. Đã lưu: {out_path}" + (f"\n  ⚡ {stats}" if stats else ""))
 
     if cfg.md:
         target = Path(md_path) if md_path else out_path.with_suffix(".md")

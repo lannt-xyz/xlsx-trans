@@ -4,7 +4,8 @@ Backend gọi `add(...)` sau mỗi lần gọi model; pipeline bọc mỗi file 
 Nếu không có lượt nào đang theo dõi thì add() không làm gì.
 """
 import threading
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 
 _lock = threading.Lock()
 _active = None
@@ -17,6 +18,8 @@ class Usage:
     completion_tokens: int = 0
     gen_seconds: float = 0.0
     exact: bool = True  # False khi token chỉ là ước tính (chế độ thủ công)
+    approx_time: bool = False  # True khi thời gian gồm cả đọc prompt (llama.cpp) nên tok/s hơi thấp
+    recent: deque = field(default_factory=lambda: deque(maxlen=8), repr=False)  # (token ra, giây) các lượt gần nhất
 
     @property
     def tps(self):
@@ -38,7 +41,7 @@ def stop():
         return u
 
 
-def add(prompt_tokens, completion_tokens, seconds):
+def add(prompt_tokens, completion_tokens, seconds, approx_time=False):
     with _lock:
         if _active is None:
             return
@@ -46,6 +49,28 @@ def add(prompt_tokens, completion_tokens, seconds):
         _active.prompt_tokens += int(prompt_tokens or 0)
         _active.completion_tokens += int(completion_tokens or 0)
         _active.gen_seconds += float(seconds or 0)
+        _active.approx_time = _active.approx_time or approx_time
+        _active.recent.append((int(completion_tokens or 0), float(seconds or 0)))
+
+
+def live():
+    """Số liệu đang chạy cho GUI: (tok/s trung bình trượt, tổng token ra, ước lượng?) hoặc None nếu chưa có lượt nào."""
+    with _lock:
+        u = _active
+        if u is None or not u.calls:
+            return None
+        tok, sec = sum(t for t, _ in u.recent), sum(s for _, s in u.recent)
+        return (tok / sec if sec > 0 and tok else None), u.completion_tokens, u.approx_time
+
+
+def summary_text():
+    """Đoạn tóm tắt cho dòng log cuối file ('' nếu không có số đo, ví dụ chế độ thủ công)."""
+    with _lock:
+        u = _active
+        if u is None or not u.calls:
+            return ""
+        tps = f"{'~' if u.approx_time else ''}{u.tps:.1f} tok/s TB" if u.tps else "chưa đo được tok/s"
+        return f"{u.prompt_tokens:,} token vào / {u.completion_tokens:,} token ra · {tps}"
 
 
 def estimate(pairs, tokenizer="o200k_base"):

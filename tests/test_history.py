@@ -183,3 +183,35 @@ class TestHistoryDialog(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLiveMetrics(unittest.TestCase):
+    def test_live_and_summary(self):
+        from xlsx_trans import metrics
+        self.assertIsNone(metrics.live())
+        self.assertEqual(metrics.summary_text(), "")
+        metrics.start()
+        try:
+            self.assertIsNone(metrics.live())  # chưa có lượt nào
+            metrics.add(100, 50, 2.0)
+            metrics.add(100, 50, 2.0, approx_time=True)
+            tps, out, approx = metrics.live()
+            self.assertAlmostEqual(tps, 25.0)
+            self.assertEqual((out, approx), (100, True))
+            text = metrics.summary_text()
+            self.assertIn("200 token vào / 100 token ra", text)
+            self.assertIn("~25.0 tok/s", text)
+        finally:
+            metrics.stop()
+
+    def test_rolling_window_follows_recent_speed(self):
+        from xlsx_trans import metrics
+        metrics.start()
+        try:
+            for _ in range(8):
+                metrics.add(0, 10, 10.0)  # 1 tok/s
+            for _ in range(8):
+                metrics.add(0, 100, 1.0)  # 100 tok/s
+            self.assertAlmostEqual(metrics.live()[0], 100.0)
+        finally:
+            metrics.stop()
